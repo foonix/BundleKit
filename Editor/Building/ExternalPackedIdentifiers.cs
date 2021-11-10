@@ -9,11 +9,9 @@ namespace InBundleResourceReference.Editor.Building
     public class ExternalPackedIdentifiers : Unity5PackedIdentifiers
     {
         private readonly Dictionary<string, string> bundleToInternalName = new Dictionary<string, string>();
-        private readonly string assetsPath;
 
         public ExternalPackedIdentifiers(ExternalReferenceAssets externalReferenceAssets)
         {
-            assetsPath = Constants.ExternalReferenceAssetsPath.Resolve(null, null);
             foreach (var file in externalReferenceAssets.files)
             {
                 bundleToInternalName[$"{Constants.AssetBundlePrefix}{file.fileName}"] = file.dependencyString;
@@ -32,7 +30,7 @@ namespace InBundleResourceReference.Editor.Building
         public override long SerializationIndexFromObjectIdentifier(ObjectIdentifier objectID)
         {
             var path = AssetDatabase.GUIDToAssetPath(objectID.guid.ToString());
-            if (path.StartsWith(assetsPath))
+            if (path.StartsWith(Constants.ExternalReferenceAssetsPath))
             {
                 return objectID.localIdentifierInFile;
             }

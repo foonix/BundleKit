@@ -35,7 +35,7 @@ namespace InBundleResourceReference.Editor.PipelineJobs
         [PathReferenceResolver]
         public string BundleArtifactPath = "<AssetBundleStaging>";
 
-        public override async Task Execute(Pipeline pipeline)
+        public override Task Execute(Pipeline pipeline)
         {
             var externalAssets = ExternalReferenceAssets.GetOrCreate();
             var externalBundleDef = GetExternalBundleDef(externalAssets);
@@ -44,7 +44,7 @@ namespace InBundleResourceReference.Editor.PipelineJobs
             var assetBundleDefs = pipeline.Datums.OfType<AssetBundleDefinitions>().Append(externalBundleDef).ToArray();
             if (assetBundleDefs.Length == 0)
             {
-                return;
+                return Task.CompletedTask;
             }
 
             var bundleArtifactPath = BundleArtifactPath.Resolve(pipeline, this);
@@ -61,22 +61,26 @@ namespace InBundleResourceReference.Editor.PipelineJobs
 
             var builds = GetAssetBundleBuilds(assetBundleDefs, explicitAssetPaths);
 
-            if (!simulate)
+            if (simulate)
             {
-                var parameters = new BundleBuildParameters(buildTarget, buildTargetGroup, bundleArtifactPath);
-                parameters.BundleCompression = ConvertCopressionEnum(buildCompression);
-                parameters.ContentBuildFlags = contentBuildFlags;
-
-                var content = new BundleBuildContent(builds);
-                var identifiers = new ExternalPackedIdentifiers(externalAssets);
-
-                var returnCode = ContentPipeline.BuildAssetBundles(parameters, content, out var result, BuildTaskList(), identifiers);
-                if (returnCode < ReturnCode.Success)
-                {
-                    throw new Exception($"Failed to build asset bundles with {returnCode} return code");
-                }
-                CopyModifiedAssetBundles(bundleArtifactPath, pipeline);
+                return Task.CompletedTask;
             }
+
+            var parameters = new BundleBuildParameters(buildTarget, buildTargetGroup, bundleArtifactPath);
+            parameters.BundleCompression = ConvertCopressionEnum(buildCompression);
+            parameters.ContentBuildFlags = contentBuildFlags;
+
+            var content = new BundleBuildContent(builds);
+            var identifiers = new ExternalPackedIdentifiers(externalAssets);
+
+            var returnCode = ContentPipeline.BuildAssetBundles(parameters, content, out var result, BuildTaskList(), identifiers);
+            if (returnCode < ReturnCode.Success)
+            {
+                throw new Exception($"Failed to build asset bundles with {returnCode} return code");
+            }
+            CopyModifiedAssetBundles(bundleArtifactPath, pipeline);
+            
+            return Task.CompletedTask;
         }
 
         private List<IBuildTask> BuildTaskList()
@@ -114,7 +118,6 @@ namespace InBundleResourceReference.Editor.PipelineJobs
 
         private AssetBundleDefinitions GetExternalBundleDef(ExternalReferenceAssets externalAssets)
         {
-            var assetsPath = Constants.ExternalReferenceAssetsPath.Resolve(null, null);
             var def = CreateInstance<AssetBundleDefinitions>();
             var list = new List<AssetBundleDefinition>();
 
@@ -123,7 +126,7 @@ namespace InBundleResourceReference.Editor.PipelineJobs
                 list.Add(new AssetBundleDefinition
                 {
                     assetBundleName = $"{Constants.AssetBundlePrefix}{fileAssets.fileName}",
-                    assets = new[] { AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(Path.Combine(assetsPath, fileAssets.fileName)) }
+                    assets = new[] { AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(Path.Combine(Constants.ExternalReferenceAssetsPath, fileAssets.fileName)) }
                 });
             }
 

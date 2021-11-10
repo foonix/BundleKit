@@ -13,7 +13,7 @@ namespace InBundleResourceReference
 
         public static ExternalReferenceAssets GetOrCreate()
         {
-            var assetsPath = Constants.ExternalReferenceAssetsPath.Resolve(null, null);
+            var assetsPath = Constants.ExternalReferenceAssetsPath;
 
             if (!Directory.Exists(assetsPath))
             {
