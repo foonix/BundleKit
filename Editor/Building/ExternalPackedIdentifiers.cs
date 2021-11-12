@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.IO;
 using ThunderKit.Core.Paths;
 using UnityEditor;
 using UnityEditor.Build.Content;
@@ -30,7 +31,7 @@ namespace InBundleResourceReference.Editor.Building
         public override long SerializationIndexFromObjectIdentifier(ObjectIdentifier objectID)
         {
             var path = AssetDatabase.GUIDToAssetPath(objectID.guid.ToString());
-            if (path.StartsWith(Constants.ExternalReferenceAssetsPath))
+            if (Path.GetDirectoryName(path).StartsWith(Constants.ExternalReferenceAssetsPath))
             {
                 return objectID.localIdentifierInFile;
             }
