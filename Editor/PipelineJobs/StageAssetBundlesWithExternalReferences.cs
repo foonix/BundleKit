@@ -1,4 +1,4 @@
-﻿using InBundleResourceReference.Editor.Building;
+﻿using BundleKit.Building;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -17,8 +17,9 @@ using UnityEditor.Build.Pipeline.Interfaces;
 using UnityEditor.Build.Pipeline.Tasks;
 using UnityEditor.Compilation;
 using UnityEngine;
+using BundleKit.Assets;
 
-namespace InBundleResourceReference.Editor.PipelineJobs
+namespace BundleKit.PipelineJobs
 {
     [PipelineSupport(typeof(Pipeline)), RequiresManifestDatumType(typeof(AssetBundleDefinitions))]
     public class StageAssetBundlesWithExternalReferences : PipelineJob

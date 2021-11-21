@@ -9,7 +9,7 @@ using UnityEditor.Build.Pipeline.Interfaces;
 using UnityEditor.Build.Pipeline.Utilities;
 using UnityEditor.Build.Utilities;
 
-namespace InBundleResourceReference.Editor.Building
+namespace BundleKit.Building
 {
     /// <summary>
     /// Packs each asset bundle and calculates the asset load file dependency list.

@@ -12,7 +12,7 @@ using UnityEditor.Build.Pipeline.WriteTypes;
 using UnityEditor.Build.Utilities;
 using UnityEngine;
 
-namespace InBundleResourceReference.Editor.Building
+namespace BundleKit.Building
 {
     /// <summary>
     /// Creates bundle commands for assets and scenes.

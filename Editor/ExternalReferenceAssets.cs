@@ -4,8 +4,9 @@ using System.IO;
 using ThunderKit.Core.Paths;
 using UnityEditor;
 using UnityEngine;
+using BundleKit.Assets;
 
-namespace InBundleResourceReference
+namespace BundleKit
 {
     public class ExternalReferenceAssets : ScriptableObject
     {

@@ -7,7 +7,7 @@ using UnityEditor.Build.Pipeline.Interfaces;
 using UnityEditor.Build.Pipeline.Utilities;
 using UnityEditor.Build.Utilities;
 
-namespace InBundleResourceReference.Editor.Building
+namespace BundleKit.Building
 {
     /// <summary>
     /// Updates the layout for bundle objects.

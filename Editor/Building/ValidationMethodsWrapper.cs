@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.Build.Pipeline;
 
-namespace InBundleResourceReference.Editor.Building
+namespace BundleKit.Building
 {
     /// <summary>
     /// Wrapper for reflection calls to internal ValidationMethods class

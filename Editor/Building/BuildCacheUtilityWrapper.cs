@@ -9,7 +9,7 @@ using UnityEditor.Build.Pipeline;
 using UnityEditor.Build.Pipeline.Utilities;
 using UnityEditor.Build.Player;
 
-namespace InBundleResourceReference.Editor.Building
+namespace BundleKit.Building
 {
     /// <summary>
     /// Wrapper for reflection calls to internal BuildCacheUtility class

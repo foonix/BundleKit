@@ -3,7 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace InBundleResourceReference
+namespace BundleKit.Assets
 {
     [Serializable]
     public class AssetFile

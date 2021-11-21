@@ -1,13 +1,13 @@
 {
-  "name": "com.kingenderbrine.inbundleresourcereference",
+  "name": "com.passivepicasso.bundlekit",
   "version": "0.0.1",
-  "displayName": "InBundleResourceReference",
-  "description": "Mod toolkit for working with Thunderstore",
+  "displayName": "BundleKit",
+  "description": "A collection of PipelineJobs to provide advanced workflows for utilizing assets out of built game files without causing redistribution",
   "unity": "2018.4",
   "release": "16f1",
   "author": {
-    "name": "InBundleResourceReference",
-    "url": "https://github.com/KingEnderBrine/InBundleResourceReference"
+    "name": "ThunderKit",
+    "url": "https://github.com/PassivePicasso/BundleKit"
   },
   "dependencies": {
     "com.unity.scriptablebuildpipeline": "1.19.3"

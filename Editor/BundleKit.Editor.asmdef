@@ -1,6 +1,7 @@
 {
     "name": "InBundleResourceReference",
     "references": [
+        "ThunderKit.Common",
         "ThunderKit.Core",
         "Unity.ScriptableBuildPipeline",
         "Unity.ScriptableBuildPipeline.Editor"
@@ -12,7 +13,9 @@
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": true,
-    "precompiledReferences": [],
+    "precompiledReferences": [
+        "AssetsTools.NET.dll"
+    ],
     "autoReferenced": false,
     "defineConstraints": []
 }

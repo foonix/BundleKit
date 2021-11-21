@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace InBundleResourceReference.Editor
+namespace BundleKit
 {
     public static class Extensions
     {

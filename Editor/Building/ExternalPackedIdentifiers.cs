@@ -5,7 +5,7 @@ using UnityEditor;
 using UnityEditor.Build.Content;
 using UnityEditor.Build.Pipeline;
 
-namespace InBundleResourceReference.Editor.Building
+namespace BundleKit.Building
 {
     public class ExternalPackedIdentifiers : Unity5PackedIdentifiers
     {
