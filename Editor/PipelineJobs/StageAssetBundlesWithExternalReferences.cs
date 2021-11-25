@@ -99,20 +99,25 @@ namespace BundleKit.PipelineJobs
                         if (!assetFileInfo.ReadName(bundleAssetsFile.file, out var name)) continue;
                         if (!name.Contains("(Assets Reference)")) continue;
                         long pathId = assetFileInfo.index;
+                        
 
                         var type = (AssetClassID)assetFileInfo.curFileType;
-                        referenceContext += $"1. ({type}) \"{name}\" {{FileID: 0, PathID: {pathId} }}\r\n";
                         var assetExt = am.GetExtAsset(bundleAssetsFile, 0, assetFileInfo.index);
                         AssetTypeValueField baseField = assetExt.instance.GetBaseField();
                         
+                        //add remover for this asset
                         var remover = new AssetsRemover(0, pathId, (int)type);
                         assetsReplacers.Add(remover);
+
+                        //add remover for all dependencies on this asset
                         foreach (var (asset, pptr, assetName, fileId, pathID, depth) in bundleAssetsFile.GetDependentAssetIds(am, baseField))
                         {
                             remover = new AssetsRemover(fileId, pathID, (int)asset.info.curFileType,
                                                         AssetHelper.GetScriptIndex(asset.file.file, asset.info));
                             assetsReplacers.Add(remover);
                         }
+                        
+                        referenceContext += $"1. ({type}) \"{name}\" {{FileID: 0, PathID: {pathId} }}\r\n";
                     }
 
                     byte[] newAssetData;
