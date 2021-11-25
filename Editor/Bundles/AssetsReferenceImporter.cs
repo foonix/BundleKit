@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using AssetsTools.NET.Extra;
+using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.Experimental.AssetImporters;
@@ -12,13 +13,15 @@ namespace BundleKit.Bundles
     {
         public override void OnImportAsset(AssetImportContext ctx)
         {
+            var am = new AssetsManager();
             var bundleName = Path.GetFileName(ctx.assetPath);
-            var bundle = AssetBundle.GetAllLoadedAssetBundles()
-                .FirstOrDefault(bnd => ctx.assetPath.Contains(bnd.name));
+            var bundle = AssetBundle.GetAllLoadedAssetBundles().FirstOrDefault(bnd => ctx.assetPath.Contains(bnd.name));
             bundle?.Unload(true);
             bundle = AssetBundle.LoadFromFile(ctx.assetPath);
+            bundle.hideFlags = HideAndDontSave | DontSaveInBuild;
 
             var bundleAsset = ScriptableObject.CreateInstance<AssetsReferenceBundle>();
+            //bundleAsset.hideFlags = NotEditable | DontSaveInBuild;
             bundleAsset.name = bundle.name;
             ctx.AddObjectToAsset(bundle.name, bundleAsset);
             ctx.SetMainObject(bundleAsset);
@@ -28,7 +31,13 @@ namespace BundleKit.Bundles
             {
                 var instance = Instantiate(assets[i]);
                 instance.name = instance.name.Replace("(Clone)", " (Assets Reference)");
-                instance.hideFlags = NotEditable;
+                instance.hideFlags = NotEditable | DontSaveInBuild;
+                //var instanceId = instance.GetInstanceID();
+                //if (AssetDatabase.TryGetGUIDAndLocalFileIdentifier(instance, out string guid, out long localId))
+                //{
+                //    Debug.Log($"name: {instance.name}  instance:{instanceId}   guid:{guid}   local:{localId}");
+                //}
+
                 ctx.AddObjectToAsset(assets[i].name, instance);
                 assets[i] = instance;
             }

@@ -15,7 +15,7 @@ using BundleKit.Assets;
 namespace BundleKit.PipelineJobs
 {
     [PipelineSupport(typeof(Pipeline))]
-    public class ResourceBundleCreator : PipelineJob
+    public class CreateResourceBundle : PipelineJob
     {
         public DefaultAsset bundle;
         public string dataDirectory;
@@ -24,13 +24,12 @@ namespace BundleKit.PipelineJobs
         public AssetClassID[] classes;
 
         private AssetsManager am;
-        private HashSet<AssetID> visitedAssetIds;
         public override Task Execute(Pipeline pipeline)
         {
             using (var progressBar = new ProgressBar("Constructing AssetBundle"))
             {
                 am = new AssetsManager();
-                visitedAssetIds = new HashSet<AssetID>();
+
                 var assetsReplacers = new List<AssetsReplacer>();
                 var contexts = new List<string>();
 
@@ -99,8 +98,8 @@ namespace BundleKit.PipelineJobs
 
                         // Find name, path and fileId of each asset referenced directly and indirectly by assetFileInfo including itself
                         var assetTypeInstanceField = am.GetTypeInstance(resourcesInst, assetFileInfo).GetBaseField();
-                        targetAssets = targetAssets.Concat(GetDependentAssetIds(resourcesInst, assetTypeInstanceField)
-                                          .Prepend((ext, null, name, 0, assetFileInfo.index, 0)));
+                        targetAssets = targetAssets.Concat(resourcesInst.GetDependentAssetIds(am, assetTypeInstanceField)
+                                                                        .Prepend((ext, null, name, 0, assetFileInfo.index, 0)));
 
                     }
                 }
@@ -196,139 +195,8 @@ namespace BundleKit.PipelineJobs
         {
             var depthStr = depth == 0 ? string.Empty : Enumerable.Repeat("  ", depth).Aggregate((a, b) => $"{a}{b}");
             var listDelim = "* ";// depth % 2 == 0 ? "* " : "- ";
-            return $"{depthStr}{listDelim}({(AssetClassID)asset.info.curFileType}) Name: \"{GetName(asset)}\"\r\n";
+            return $"{depthStr}{listDelim}({(AssetClassID)asset.info.curFileType}) Name: \"{asset.GetName()}\"\r\n";
         }
 
-        private static string GetName(AssetExternal asset)
-        {
-            switch ((AssetClassID)asset.info.curFileType)
-            {
-                case AssetClassID.Shader:
-                    var parsedFormField = asset.instance.GetBaseField().Get("m_ParsedForm");
-                    var shaderNameField = parsedFormField.Get("m_Name");
-                    return shaderNameField.GetValue().AsString();
-                default:
-                    var foundName = asset.info.ReadName(asset.file.file, out var name);
-                    if (foundName) return name;
-                    else return string.Empty;
-            }
-        }
-
-        private IEnumerable<AssetData> GetDependentAssetIds(AssetsFileInstance inst, AssetTypeValueField field, int depth = 1)
-        {
-            foreach (AssetTypeValueField child in field.children)
-            {
-                //not a value (ie not an int)
-                if (!child.templateField.hasValue)
-                {
-                    //not array of values either
-                    if (child.templateField.isArray && child.templateField.children[1].valueType != EnumValueTypes.ValueType_None)
-                        continue;
-
-                    string typeName = child.templateField.type;
-                    //is a pptr
-                    if (typeName.StartsWith("PPtr<") && typeName.EndsWith(">") /*&& child.childrenCount == 2*/)
-                    {
-                        int fileId = child.Get("m_FileID").GetValue().AsInt();
-                        long pathId = child.Get("m_PathID").GetValue().AsInt64();
-
-                        //not a null pptr
-                        if (pathId == 0)
-                            continue;
-
-                        var assetId = ConvertToAssetID(inst, fileId, pathId);
-                        //not already visited and not a monobehaviour
-                        if (visitedAssetIds.Contains(assetId)) continue;
-                        visitedAssetIds.Add(assetId);
-
-                        var ext = am.GetExtAsset(inst, fileId, pathId);
-                        var name = GetName(ext);
-
-                        //we don't want to process monobehaviours as thats a project in itself
-                        if (ext.info.curFileType == (int)AssetClassID.MonoBehaviour) continue;
-
-                        yield return (ext, child, name, fileId, pathId, depth);
-
-                        //recurse through dependencies
-                        foreach (var dep in GetDependentAssetIds(ext.file, ext.instance.GetBaseField(), depth + 1))
-                            yield return dep;
-                    }
-                    //recurse through dependencies
-                    foreach (var dep in GetDependentAssetIds(inst, child, depth + 1))
-                        yield return dep;
-                }
-            }
-        }
-
-        private AssetID ConvertToAssetID(AssetsFileInstance inst, int fileId, long pathId)
-        {
-            return new AssetID(ConvertToInstance(inst, fileId).path, pathId);
-        }
-
-        private AssetsFileInstance ConvertToInstance(AssetsFileInstance inst, int fileId)
-        {
-            if (fileId == 0)
-                return inst;
-            else
-                return inst.dependencies[fileId - 1];
-        }
-    }
-
-    static class Extensions
-    {
-        public static void SetValue(this AssetTypeValueField valueField, string fieldName, object value)
-        {
-            valueField.Get(fieldName).GetValue().Set(value);
-        }
-        public static void SetPPtrsFileIdZero(this AssetTypeValueField field, AssetsFileInstance inst)
-        {
-            var fieldStack = new Stack<AssetTypeValueField>();
-            fieldStack.Push(field);
-            while (fieldStack.Any())
-            {
-                var current = fieldStack.Pop();
-                foreach (AssetTypeValueField child in current.children)
-                {
-                    //not a value (ie not an int)
-                    if (!child.templateField.hasValue)
-                    {
-                        //not array of values either
-                        if (child.templateField.isArray && child.templateField.children[1].valueType != EnumValueTypes.ValueType_None)
-                            continue;
-
-                        string typeName = child.templateField.type;
-                        //is a pptr
-                        if (typeName.StartsWith("PPtr<") && typeName.EndsWith(">") /*&& child.childrenCount == 2*/)
-                        {
-                            var fileIdField = child.Get("m_FileID").GetValue();
-                            var fileId = fileIdField.AsInt();
-                            var pathId = child.Get("m_PathID").GetValue().AsInt64();
-
-                            // if already local
-                            if (fileId == 0) continue;
-                            //not a null pptr
-                            if (pathId == 0) continue;
-
-                            fileIdField.Set(0);
-                        }
-                        //recurse through dependencies
-                        fieldStack.Push(child);
-                    }
-                }
-            }
-        }
-
-        private static AssetID ConvertToAssetID(AssetsFileInstance inst, int fileId, long pathId)
-        {
-            return new AssetID(ConvertToInstance(inst, fileId).path, pathId);
-        }
-
-        private static AssetsFileInstance ConvertToInstance(AssetsFileInstance inst, int fileId)
-        {
-            if (fileId == 0)
-                return inst;
-            else
-                return inst.dependencies[fileId - 1];
-        }
     }
 }

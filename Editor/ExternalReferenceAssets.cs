@@ -1,10 +1,8 @@
-﻿using System.Collections;
+﻿using BundleKit.Assets;
 using System.Collections.Generic;
 using System.IO;
-using ThunderKit.Core.Paths;
 using UnityEditor;
 using UnityEngine;
-using BundleKit.Assets;
 
 namespace BundleKit
 {

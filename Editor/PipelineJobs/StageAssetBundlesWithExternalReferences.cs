@@ -18,6 +18,9 @@ using UnityEditor.Build.Pipeline.Tasks;
 using UnityEditor.Compilation;
 using UnityEngine;
 using BundleKit.Assets;
+using BundleKit.Bundles;
+using AssetsTools.NET.Extra;
+using AssetsTools.NET;
 
 namespace BundleKit.PipelineJobs
 {
@@ -38,11 +41,9 @@ namespace BundleKit.PipelineJobs
 
         public override Task Execute(Pipeline pipeline)
         {
-            var externalAssets = ExternalReferenceAssets.GetOrCreate();
-            var externalBundleDef = GetExternalBundleDef(externalAssets);
             AssetDatabase.SaveAssets();
 
-            var assetBundleDefs = pipeline.Datums.OfType<AssetBundleDefinitions>().Append(externalBundleDef).ToArray();
+            var assetBundleDefs = pipeline.Datums.OfType<AssetBundleDefinitions>().ToArray();
             if (assetBundleDefs.Length == 0)
             {
                 return Task.CompletedTask;
@@ -72,15 +73,71 @@ namespace BundleKit.PipelineJobs
             parameters.ContentBuildFlags = contentBuildFlags;
 
             var content = new BundleBuildContent(builds);
-            var identifiers = new ExternalPackedIdentifiers(externalAssets);
-
-            var returnCode = ContentPipeline.BuildAssetBundles(parameters, content, out var result, BuildTaskList(), identifiers);
+            var returnCode = ContentPipeline.BuildAssetBundles(parameters, content, out var result, BuildTaskList(), new Unity5PackedIdentifiers());
             if (returnCode < ReturnCode.Success)
             {
                 throw new Exception($"Failed to build asset bundles with {returnCode} return code");
             }
+
+            var assetsReplacers = new List<AssetsReplacer>();
+            var bundleReplacers = new List<BundleReplacer>();
+            var referenceContext = "Removed Assets\r\n";
+            foreach (var build in builds)
+            {
+                //Load AssetBundle using AssetTools.Net
+                //Modify AssetBundles by removing assets named (Asset Reference) and all their dependencies.
+                var am = new AssetsManager();
+                var path = Path.Combine(bundleArtifactPath, build.assetBundleName);
+                using (var stream = File.OpenRead(path))
+                {
+                    var bun = am.LoadBundleFile(stream);
+                    var bundleAssetsFile = am.LoadAssetsFileFromBundle(bun, 0);
+                    var assetBundleAsset = bundleAssetsFile.table.GetAssetsOfType((int)AssetClassID.AssetBundle)[0];
+                    var assetBundleExtAsset = am.GetExtAsset(bundleAssetsFile, 0, assetBundleAsset.index);
+                    foreach (var assetFileInfo in bundleAssetsFile.table.assetFileInfo)// m_Container.children
+                    {
+                        if (!assetFileInfo.ReadName(bundleAssetsFile.file, out var name)) continue;
+                        if (!name.Contains("(Assets Reference)")) continue;
+                        long pathId = assetFileInfo.index;
+
+                        var type = (AssetClassID)assetFileInfo.curFileType;
+                        referenceContext += $"1. ({type}) \"{name}\" {{FileID: 0, PathID: {pathId} }}\r\n";
+                        var assetExt = am.GetExtAsset(bundleAssetsFile, 0, assetFileInfo.index);
+                        AssetTypeValueField baseField = assetExt.instance.GetBaseField();
+                        
+                        var remover = new AssetsRemover(0, pathId, (int)type);
+                        assetsReplacers.Add(remover);
+                        foreach (var (asset, pptr, assetName, fileId, pathID, depth) in bundleAssetsFile.GetDependentAssetIds(am, baseField))
+                        {
+                            remover = new AssetsRemover(fileId, pathID, (int)asset.info.curFileType,
+                                                        AssetHelper.GetScriptIndex(asset.file.file, asset.info));
+                            assetsReplacers.Add(remover);
+                        }
+                    }
+
+                    byte[] newAssetData;
+                    using (var bundleStream = new MemoryStream())
+                    using (var writer = new AssetsFileWriter(bundleStream))
+                    {
+                        bundleAssetsFile.file.Write(writer, 0, 
+                            assetsReplacers.OrderBy(repl => repl.GetPathID()).ToList(), 0);
+
+                        newAssetData = bundleStream.ToArray();
+                    }
+                    var bundleReplacer = new BundleReplacerFromMemory(bundleAssetsFile.name, bundleAssetsFile.name, true, newAssetData, -1);
+                    bundleReplacers.Add(bundleReplacer);
+
+                    using (var file = File.OpenWrite(path))
+                    using (var writer = new AssetsFileWriter(file))
+                        bun.file.Write(writer, bundleReplacers);
+                }
+
+                //Add a dependency to the asset bundle for resources.assets
+                //Update references to (Asset Reference) with reference to asset in resources.assets
+            }
+
             CopyModifiedAssetBundles(bundleArtifactPath, pipeline);
-            
+
             return Task.CompletedTask;
         }
 
@@ -117,23 +174,6 @@ namespace BundleKit.PipelineJobs
             return buildTasks;
         }
 
-        private AssetBundleDefinitions GetExternalBundleDef(ExternalReferenceAssets externalAssets)
-        {
-            var def = CreateInstance<AssetBundleDefinitions>();
-            var list = new List<AssetBundleDefinition>();
-
-            foreach (var fileAssets in externalAssets.files)
-            {
-                list.Add(new AssetBundleDefinition
-                {
-                    assetBundleName = $"{Constants.AssetBundlePrefix}{fileAssets.fileName}",
-                    assets = new[] { AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(Path.Combine(Constants.ExternalReferenceAssetsPath, fileAssets.fileName)) }
-                });
-            }
-
-            def.assetBundles = list.ToArray();
-            return def;
-        }
 
         private void CopyModifiedAssetBundles(string bundleArtifactPath, Pipeline pipeline)
         {
@@ -215,6 +255,7 @@ namespace BundleKit.PipelineJobs
                         var dependencies = assets
                             .SelectMany(assetPath => AssetDatabase.GetDependencies(assetPath))
                             .Where(dap => !explicitAssetPaths.Contains(dap))
+                            .Where(dap => AssetDatabase.GetMainAssetTypeAtPath(dap) != typeof(AssetsReferenceBundle))
                             .ToArray();
                         assets.AddRange(dependencies);
                     }

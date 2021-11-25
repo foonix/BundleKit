@@ -1,5 +1,5 @@
 {
-    "name": "InBundleResourceReference",
+    "name": "BundleKit.Editor",
     "references": [
         "ThunderKit.Common",
         "ThunderKit.Core",

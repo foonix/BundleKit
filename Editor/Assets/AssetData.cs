@@ -4,7 +4,7 @@ using System.Collections.Generic;
 
 namespace BundleKit.Assets
 {
-    internal struct AssetData
+    public struct AssetData
     {
         public readonly AssetExternal AssetExt;
         public readonly AssetTypeValueField PPtr;

@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -7,6 +8,15 @@ namespace BundleKit.Bundles
     public class AssetsReferenceBundle : ScriptableObject
     {
         public Object[] Assets;
+
+        public List<(long, long)> mappings = new List<(long, long)>();
+        public long this[long pathId]
+        {
+            get
+            {
+                return mappings.FirstOrDefault(m => m.Item1 == pathId).Item2;
+            }
+        }
 
         [InitializeOnLoadMethod]
         static void ReloadAssetsReferenceBundles()
@@ -22,7 +32,8 @@ namespace BundleKit.Bundles
         {
             if (!EditorUtility.IsPersistent(this)) return;
             var path = AssetDatabase.GetAssetPath(this);
-            var bundle = AssetBundle.GetAllLoadedAssetBundles().FirstOrDefault(bnd => name == bnd.name);
+            var bundle = AssetBundle.GetAllLoadedAssetBundles()
+                .FirstOrDefault(bnd => name == bnd.name);
             if (!bundle)
                 bundle = AssetBundle.LoadFromFile(path);
         }
