@@ -110,7 +110,7 @@ namespace BundleKit.PipelineJobs
                         assetsReplacers.Add(remover);
 
                         //add remover for all dependencies on this asset
-                        foreach (var (asset, pptr, assetName, fileId, pathID, depth) in bundleAssetsFile.GetDependentAssetIds(am, baseField))
+                        foreach (var (asset, pptr, assetName, assetFileName, fileId, pathID, depth) in bundleAssetsFile.GetDependentAssetIds(am, baseField))
                         {
                             remover = new AssetsRemover(fileId, pathID, (int)asset.info.curFileType,
                                                         AssetHelper.GetScriptIndex(asset.file.file, asset.info));

@@ -1,9 +1,8 @@
-﻿using AssetsTools.NET.Extra;
-using System.IO;
+﻿using System.IO;
 using System.Linq;
-using UnityEditor;
 using UnityEditor.Experimental.AssetImporters;
 using UnityEngine;
+using Exception = System.Exception;
 
 namespace BundleKit.Bundles
 {
@@ -13,7 +12,7 @@ namespace BundleKit.Bundles
     {
         public override void OnImportAsset(AssetImportContext ctx)
         {
-            var am = new AssetsManager();
+            //var am = new AssetsManager();
             var bundleName = Path.GetFileName(ctx.assetPath);
             var bundle = AssetBundle.GetAllLoadedAssetBundles().FirstOrDefault(bnd => ctx.assetPath.Contains(bnd.name));
             bundle?.Unload(true);
@@ -21,27 +20,29 @@ namespace BundleKit.Bundles
             bundle.hideFlags = HideAndDontSave | DontSaveInBuild;
 
             var bundleAsset = ScriptableObject.CreateInstance<AssetsReferenceBundle>();
-            //bundleAsset.hideFlags = NotEditable | DontSaveInBuild;
             bundleAsset.name = bundle.name;
-            ctx.AddObjectToAsset(bundle.name, bundleAsset);
+            ctx.AddObjectToAsset(bundle.name, bundleAsset, Texture2D.whiteTexture);
             ctx.SetMainObject(bundleAsset);
 
-            var assets = bundle.LoadAllAssets().OfType<Material>().ToArray();
-            for (int i = 0; i < assets.Length; i++)
+            Object[] allAssets = bundle.LoadAllAssets();
+            try
             {
-                var instance = Instantiate(assets[i]);
+                var mappingDataJson = allAssets.OfType<TextAsset>().First(ta => ta.name == "mappingdata.json");
+                //var data = JsonUtility.FromJson<MappingData>(mappingDataJson.text);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError(e);
+            }
+            for (int i = 0; i < allAssets.Length; i++)
+            {
+                var instance = Instantiate(allAssets[i]);
                 instance.name = instance.name.Replace("(Clone)", " (Assets Reference)");
                 instance.hideFlags = NotEditable | DontSaveInBuild;
-                //var instanceId = instance.GetInstanceID();
-                //if (AssetDatabase.TryGetGUIDAndLocalFileIdentifier(instance, out string guid, out long localId))
-                //{
-                //    Debug.Log($"name: {instance.name}  instance:{instanceId}   guid:{guid}   local:{localId}");
-                //}
-
-                ctx.AddObjectToAsset(assets[i].name, instance);
-                assets[i] = instance;
+                ctx.AddObjectToAsset(allAssets[i].name, instance, Texture2D.whiteTexture);
+                allAssets[i] = instance;
             }
-            bundleAsset.Assets = assets;
+            bundleAsset.Assets = allAssets;
         }
     }
 }

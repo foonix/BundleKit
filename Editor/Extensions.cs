@@ -12,11 +12,17 @@ namespace BundleKit
         {
             return collection == null || collection.Count == 0;
         }
+
+        public static AssetTypeValue GetValue(this AssetTypeValueField valueField, string fieldName)
+        {
+            return valueField.Get(fieldName).GetValue();
+        }
+
         public static void SetValue(this AssetTypeValueField valueField, string fieldName, object value)
         {
             valueField.Get(fieldName).GetValue().Set(value);
         }
-        public static void SetPPtrsFileIdZero(this AssetTypeValueField field, AssetsFileInstance inst)
+        public static void SetPPtrsFileId(this AssetTypeValueField field, AssetsFileInstance inst, int newFileId)
         {
             var fieldStack = new Stack<AssetTypeValueField>();
             fieldStack.Push(field);
@@ -34,18 +40,15 @@ namespace BundleKit
 
                         string typeName = child.templateField.type;
                         //is a pptr
-                        if (typeName.StartsWith("PPtr<") && typeName.EndsWith(">") /*&& child.childrenCount == 2*/)
+                        if (typeName.StartsWith("PPtr<") && typeName.EndsWith(">"))
                         {
                             var fileIdField = child.Get("m_FileID").GetValue();
-                            var fileId = fileIdField.AsInt();
                             var pathId = child.Get("m_PathID").GetValue().AsInt64();
 
-                            // if already local
-                            if (fileId == 0) continue;
                             //not a null pptr
                             if (pathId == 0) continue;
 
-                            fileIdField.Set(0);
+                            fileIdField.Set(newFileId);
                         }
                         //recurse through dependencies
                         fieldStack.Push(child);
@@ -101,7 +104,7 @@ namespace BundleKit
                         //we don't want to process monobehaviours as thats a project in itself
                         if (ext.info.curFileType == (int)AssetClassID.MonoBehaviour) continue;
 
-                        yield return (ext, child, name, fileId, pathId, depth);
+                        yield return (ext, child, name, ext.file.name, fileId, pathId, depth);
 
                         //recurse through dependencies
                         foreach (var dep in GetDependentAssetIds(ext.file, am, ext.instance.GetBaseField(), depth + 1, visitedAssetIds))
@@ -115,17 +118,18 @@ namespace BundleKit
         }
         public static string GetName(this AssetExternal asset)
         {
-            switch ((AssetClassID)asset.info.curFileType)
-            {
-                case AssetClassID.Shader:
-                    var parsedFormField = asset.instance.GetBaseField().Get("m_ParsedForm");
-                    var shaderNameField = parsedFormField.Get("m_Name");
-                    return shaderNameField.GetValue().AsString();
-                default:
-                    var foundName = asset.info.ReadName(asset.file.file, out var name);
-                    if (foundName) return name;
-                    else return string.Empty;
-            }
+            return AssetHelper.GetAssetNameFastNaive(asset.file.file, asset.info);
+            //switch ((AssetClassID)asset.info.curFileType)
+            //{
+            //    case AssetClassID.Shader:
+            //        var parsedFormField = asset.instance.GetBaseField().Get("m_ParsedForm");
+            //        var shaderNameField = parsedFormField.Get("m_Name");
+            //        return shaderNameField.GetValue().AsString();
+            //    default:
+            //        var foundName = asset.info.ReadName(asset.file.file, out var name);
+            //        if (foundName) return name;
+            //        else return string.Empty;
+            //}
         }
     }
 }
