@@ -1,7 +1,7 @@
 ﻿using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 using BundleKit.Assets;
-using BundleKit.Bundles;
+using BundleKit.Utility;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -12,7 +12,6 @@ using ThunderKit.Common.Logging;
 using ThunderKit.Core.Paths;
 using ThunderKit.Core.Pipelines;
 using UnityEditor;
-using UnityEngine;
 
 namespace BundleKit.PipelineJobs
 {
@@ -36,7 +35,7 @@ namespace BundleKit.PipelineJobs
                 var contexts = new List<string>();
                 var nameRegex = new Regex(nameRegexFilter);
 
-                InitializePaths(pipeline, out var resourcesFilePath, out var ggmPath, out var fileName, out var path);
+                InitializePaths(pipeline, out var resourcesFilePath, out var ggmPath, out var fileName, out var path, out var dataDirectoryPath);
 
                 //Load bundle file and its AssetsFile
                 var bun = am.LoadBundleFile(path, true);
@@ -101,12 +100,16 @@ namespace BundleKit.PipelineJobs
                 var dependencyFieldChildren = new List<AssetTypeValueField>();
                 var dependencies = resourcesInst.file.dependencies.dependencies.ToList();
                 var dependencyArray = bundleBaseField.Get("m_Dependencies").Get("Array");
-                dependencies.Add(new AssetsFileDependency
+                //dependencies.Add(new AssetsFileDependency
+                //{
+                //    assetPath = "resources.assets",
+                //    originalAssetPath = "resources.assets",
+                //    bufferedPath = string.Empty
+                //});
+                for(int i = 0; i < dependencies.Count; i++)
                 {
-                    assetPath = "resources.assets",
-                    originalAssetPath = "resources.assets",
-                    bufferedPath = string.Empty
-                });
+                    dependencies[i].assetPath = $"{dataDirectoryPath}{dependencies[i].assetPath}";
+                }
                 bundleAssetsFile.file.dependencies.dependencyCount = dependencies.Count;
                 bundleAssetsFile.file.dependencies.dependencies = dependencies;
                 foreach (var dep in dependencies)
@@ -118,36 +121,69 @@ namespace BundleKit.PipelineJobs
                 dependencyArray.SetChildrenList(dependencyFieldChildren.ToArray());
 
                 var context = string.Empty;
-                var realizedAssetTargets = targetAssets.OrderBy(ta => ta.PathId).Distinct().ToArray();
-                long nextId = 2, maxId = long.MinValue;
-                var map = new Dictionary<(int fileId, long pathId), (int fileId, long pathId)>();
+                var realizedAssetTargets = targetAssets.OrderBy(ta => ta.Depth).Distinct().ToArray();
+                long nextId = 2;
+                var originCurrentMap = new Dictionary<(int fileId, long pathId), (int fileId, long pathId)>();
+                var currentOriginMap = new Dictionary<(int fileId, long pathId), (int fileId, long pathId)>();
                 foreach (var (asset, pptr, assetName, assetFileName, fileId, pathId, depth) in realizedAssetTargets)
                 {
-                    if (depth > 0)
-                    {
-                        continue;
-                    }
+                    nextId++;
+                    //Store map of new fileId and PathId to original fileId and pathid
+                    originCurrentMap[(fileId, pathId)] = (0, nextId);
+                    currentOriginMap[(0, nextId)] = (fileId, pathId);
+                }
+                nextId = 2;
+                foreach (var (asset, pptr, assetName, assetFileName, fileId, pathId, depth) in realizedAssetTargets)
+                {
+                    //if (depth > 0)
+                    //{
+                    //    continue;
+                    //}
                     if (!string.IsNullOrEmpty(context)) contexts.Add(context);
 
                     context = $"{assetName}\r\n";
 
                     var assetBaseField = asset.instance.GetBaseField();
-                    assetBaseField.SetPPtrsFileId(asset.file, dependencies.Count);
-                    nextId++;
-                    //Store map of new fileId and PathId to original fileId and pathid
-                    map[(0, nextId)] = (fileId, pathId);
+                    assetBaseField.RemapPPtrs(asset.file, originCurrentMap);
+                    if (assetBaseField.GetFieldType() == "Texture2D")
+                    {
+                        var streamDataField = assetBaseField.Get("m_StreamData");
+                        streamDataField.SetValue("path", $"{dataDirectoryPath}{streamDataField.GetValue("path").AsString()}");
+                        //var tf = TextureFile.ReadTextureFile(assetBaseField);
+                        //if (tf != null)
+                        //{
+                        //var value = tf.GetTextureData(dataDirectoryPath);
+                        //imageDataArrayField.Set(value);
+                        //var valueArray = new AssetTypeArray()
+                        //{
+                        //    size = value.Length
+                        //};
+                        //var imageDataField = assetBaseField.Get("image data");
+                        //var data = new AssetTypeValueField[value.Length];
+                        //for (int i = 0; i < value.Length; i++)
+                        //{
+                        //    var dataField = ValueBuilder.DefaultValueFieldFromArrayTemplate(imageDataField);
+                        //    dataField.GetValue().Set(value[i]);
+                        //    data[i] = dataField;
+                        //}
+                        //imageDataField.SetChildrenList(data);
+                        //streamDataField.GetValue().Set(null);
+                        //}
+                    }
 
                     var otherBytes = asset.instance.WriteToByteArray();
-                    var currentAssetReplacer = new AssetsReplacerFromMemory(0, nextId, (int)asset.info.curFileType,
+                    var currentAssetReplacer = new AssetsReplacerFromMemory(0, ++nextId, (int)asset.info.curFileType,
                                                                             AssetHelper.GetScriptIndex(asset.file.file, asset.info),
                                                                             otherBytes);
                     assetsReplacers.Add(currentAssetReplacer);
 
+                    //if (depth == 0)
                     // Create entry in m_Container to make this asset visible in the API, otherwise said the asset can be found with AssetBundles.LoadAsset* methods
                     newContainerChildren.Add(CreateIndexEntry(containerArray, assetName, 0, nextId));
-                    maxId = Math.Max(Math.Max(maxId, pathId), nextId);
+
                     context += GenerateContextLog(asset, depth);
                 }
+
                 if (!string.IsNullOrEmpty(context)) contexts.Add(context);
 
                 //// Create a text asset to store information that will be used to modified bundles built by users to redirect references to the original source files
@@ -160,11 +196,10 @@ namespace BundleKit.PipelineJobs
                 textAssetBaseField.Get("m_Name").GetValue().Set("mappingdata.json");
                 textAssetBaseField.Get("m_Script").GetValue().Set("I have some sick text");
 
-                var nextAssetId = maxId + 1;
-                assetsReplacers.Add(new AssetsReplacerFromMemory(0, nextAssetId, cldbType.classId, 0xffff, textAssetBaseField.WriteToByteArray()));
+                assetsReplacers.Add(new AssetsReplacerFromMemory(0, ++nextId, cldbType.classId, 0xffff, textAssetBaseField.WriteToByteArray()));
                 {
                     // Use m_Container to construct an blank element for it
-                    var pair = CreateIndexEntry(containerArray, textAssetBaseField.GetValue("m_Name").AsString(), 0, nextAssetId);
+                    var pair = CreateIndexEntry(containerArray, textAssetBaseField.GetValue("m_Name").AsString(), 0, nextId);
                     newContainerChildren.Add(pair);
                 }
 
@@ -225,13 +260,13 @@ namespace BundleKit.PipelineJobs
             return pair;
         }
 
-        private void InitializePaths(Pipeline pipeline, out string resourcesFilePath, out string ggmPath, out string fileName, out string path)
+        private void InitializePaths(Pipeline pipeline, out string resourcesFilePath, out string ggmPath, out string fileName, out string bundlePath, out string dataDirectoryPath)
         {
-            var dataDirectoryPath = PathReference.ResolvePath(dataDirectory, pipeline, this);
+            dataDirectoryPath = PathReference.ResolvePath(dataDirectory, pipeline, this);
             resourcesFilePath = Path.Combine(dataDirectoryPath, "resources.assets");
             ggmPath = Path.Combine(dataDirectoryPath, "globalgamemanagers");
             fileName = Path.GetFileName(outputAssetBundlePath);
-            path = AssetDatabase.GetAssetPath(bundle);
+            bundlePath = AssetDatabase.GetAssetPath(bundle);
         }
 
         private static string GenerateContextLog(AssetExternal asset, int depth)

@@ -99,12 +99,12 @@ namespace BundleKit.PipelineJobs
                         if (!assetFileInfo.ReadName(bundleAssetsFile.file, out var name)) continue;
                         if (!name.Contains("(Assets Reference)")) continue;
                         long pathId = assetFileInfo.index;
-                        
+
 
                         var type = (AssetClassID)assetFileInfo.curFileType;
                         var assetExt = am.GetExtAsset(bundleAssetsFile, 0, assetFileInfo.index);
                         AssetTypeValueField baseField = assetExt.instance.GetBaseField();
-                        
+
                         //add remover for this asset
                         var remover = new AssetsRemover(0, pathId, (int)type);
                         assetsReplacers.Add(remover);
@@ -116,7 +116,7 @@ namespace BundleKit.PipelineJobs
                                                         AssetHelper.GetScriptIndex(asset.file.file, asset.info));
                             assetsReplacers.Add(remover);
                         }
-                        
+
                         referenceContext += $"1. ({type}) \"{name}\" {{FileID: 0, PathID: {pathId} }}\r\n";
                     }
 
@@ -124,7 +124,7 @@ namespace BundleKit.PipelineJobs
                     using (var bundleStream = new MemoryStream())
                     using (var writer = new AssetsFileWriter(bundleStream))
                     {
-                        bundleAssetsFile.file.Write(writer, 0, 
+                        bundleAssetsFile.file.Write(writer, 0,
                             assetsReplacers.OrderBy(repl => repl.GetPathID()).ToList(), 0);
 
                         newAssetData = bundleStream.ToArray();
@@ -142,7 +142,7 @@ namespace BundleKit.PipelineJobs
             }
 
             CopyModifiedAssetBundles(bundleArtifactPath, pipeline);
-
+            
             return Task.CompletedTask;
         }
 
