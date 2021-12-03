@@ -21,6 +21,7 @@ using BundleKit.Assets;
 using BundleKit.Bundles;
 using AssetsTools.NET.Extra;
 using AssetsTools.NET;
+using BundleKit.Utility;
 
 namespace BundleKit.PipelineJobs
 {

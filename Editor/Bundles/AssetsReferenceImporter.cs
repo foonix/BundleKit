@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using ThunderKit.Common.Package;
 using UnityEditor;
 using UnityEditor.Experimental.AssetImporters;
 using UnityEngine;
@@ -14,7 +15,6 @@ namespace BundleKit.Bundles
     public class AssetsReferenceImporter : ScriptedImporter
     {
         public MaterialDefinition[] customMaterialDefinitions;
-        public Material[] customMaterialsSerialization;
 
         public override void OnImportAsset(AssetImportContext ctx)
         {
@@ -47,6 +47,7 @@ namespace BundleKit.Bundles
                 Debug.LogError(e);
             }
             bundleAsset.Assets = allAssets;
+            var textureLookup = new Dictionary<long, Texture>();
             for (int i = 0; i < allAssets.Length; i++)
             {
                 var asset = bundleAsset.Assets[i];
@@ -58,13 +59,11 @@ namespace BundleKit.Bundles
                 }
                 if (asset is Texture2D)
                 {
+                    if (AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out string guid, out long localId))
+                        textureLookup[localId] = asset as Texture;
                     continue;
                 }
                 ctx.AddObjectToAsset(asset.name, asset);
-                if (AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out string guid, out long localId))
-                {
-                    Debug.Log($"Found: {asset.name} Guid: {guid} PathId: {localId}");
-                }
             }
             var validDefinitions = customMaterialDefinitions.Where(md => !string.IsNullOrEmpty(md.name) && !string.IsNullOrEmpty(md.shader)).ToArray();
             var customMaterials = new Material[validDefinitions.Length];
@@ -75,6 +74,15 @@ namespace BundleKit.Bundles
                     name = $"{validDefinitions[i].name} (Custom Asset)",
                     hideFlags = None
                 };
+
+                var nameHash = PackageHelper.GetStringHash(customMaterials[i].name);
+                var metaDataPath = Path.Combine("Library", "BundleKitMetaData", $"{nameHash}.json");
+                if (File.Exists(metaDataPath))
+                {
+                    var jsonData = File.ReadAllText(metaDataPath);
+                    var shaderData = JsonUtility.FromJson<SerializableMaterialData>(jsonData);
+                    shaderData.Apply(customMaterials[i], textureLookup);
+                }
                 ctx.AddObjectToAsset(customMaterials[i].name, customMaterials[i]);
             }
             bundleAsset.CustomMaterials = customMaterials;

@@ -1,11 +1,12 @@
-﻿using BundleKit.Bundles;
-using System.Collections;
+﻿using BundleKit.Assets;
+using BundleKit.Bundles;
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using ThunderKit.Common.Package;
 using UnityEditor;
-using UnityEditorInternal;
 using UnityEngine;
-using static UnityEditor.EditorGUI;
 
 namespace BundleKit.Editors
 {
@@ -14,14 +15,14 @@ namespace BundleKit.Editors
     {
         protected override void OnHeaderGUI()
         {
-
             var mainAsset = AssetDatabase.LoadMainAssetAtPath(AssetDatabase.GetAssetPath(target));
             if (mainAsset is AssetsReferenceBundle arb)
             {
                 if (arb.CustomMaterials.Contains(target))
                 {
                     //using (new DisabledScope(true))
-                        base.OnHeaderGUI();
+                    base.OnHeaderGUI();
+
                     return;
                 }
             }
@@ -30,7 +31,8 @@ namespace BundleKit.Editors
         public override void OnInspectorGUI()
         {
             var mainAsset = AssetDatabase.LoadMainAssetAtPath(AssetDatabase.GetAssetPath(target));
-            if (mainAsset is AssetsReferenceBundle arb)
+            var arb = mainAsset as AssetsReferenceBundle;
+            if (arb)
             {
                 if (arb.CustomMaterials.Contains(target))
                 {
@@ -38,6 +40,19 @@ namespace BundleKit.Editors
                 }
             }
             base.OnInspectorGUI();
+            if (arb)
+            {
+                if (arb.CustomMaterials.Contains(target))
+                {
+                    var material = target as Material;
+                    var shaderData = SerializableMaterialData.Build(material);
+                    var jsonData = JsonUtility.ToJson(shaderData, true);
+                    var nameHash = PackageHelper.GetStringHash(target.name);
+                    var outputPath = Path.Combine("Library", "BundleKitMetaData", $"{nameHash}.json");
+                    Directory.CreateDirectory(Path.GetDirectoryName(outputPath));
+                    File.WriteAllText(outputPath, jsonData);
+                }
+            }
         }
     }
 }
