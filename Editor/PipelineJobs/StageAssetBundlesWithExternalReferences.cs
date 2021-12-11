@@ -35,6 +35,7 @@ namespace BundleKit.PipelineJobs
         public BuildTarget buildTarget = BuildTarget.StandaloneWindows;
         public BuildTargetGroup buildTargetGroup = BuildTargetGroup.Standalone;
         public Compression buildCompression = Compression.Uncompressed;
+        public bool remapAssetsReferences;
         public AssetsReferenceBundle AssetsReferenceBundle;
         public bool simulate;
 
@@ -78,85 +79,102 @@ namespace BundleKit.PipelineJobs
 
             var content = new BundleBuildContent(builds);
             var remapContext = new RemapContext();
-            var returnCode = ContentPipeline.BuildAssetBundles(parameters, content, out var result, BuildTaskList(), new AssetFileIdentifier(AssetsReferenceBundle), remapContext);
+            var context = new List<IContextObject>();
+
+            var returnCode = ContentPipeline.BuildAssetBundles(parameters, content, out var result, BuildTaskList(), remapContext, new AssetFileIdentifier(AssetsReferenceBundle));
 
             if (returnCode < 0)
             {
                 throw new Exception($"AssetBundle Build Incomplete: {returnCode}");
             }
 
-            var assetsReplacers = new List<AssetsReplacer>();
-            var bundleReplacers = new List<BundleReplacer>();
-            foreach (var build in builds)
+            if (remapAssetsReferences)
             {
-                assetsReplacers.Clear();
-                bundleReplacers.Clear();
-                //Load AssetBundle using AssetTools.Net
-                //Modify AssetBundles by removing assets named (Asset Reference) and all their dependencies.
-                var am = new AssetsManager();
-                var path = Path.Combine(bundleArtifactPath, build.assetBundleName);
-                var temppath = Path.Combine(bundleArtifactPath, $"{build.assetBundleName}.tmp");
-
-                if (File.Exists(temppath)) File.Delete(temppath);
-                File.Move(path, temppath);
-
-                using (var stream = File.OpenRead(temppath))
+                var assetsReplacers = new List<AssetsReplacer>();
+                var bundleReplacers = new List<BundleReplacer>();
+                foreach (var build in builds)
                 {
-                    var bun = am.LoadBundleFile(stream);
-                    var fileCount = bun.file.NumFiles;
-                    var assetsFile = am.LoadAssetsFileFromBundle(bun, 0);
-                    var dependencies = assetsFile.file.dependencies.dependencies;
-                    var initialDependencyCount = dependencies.Count;
+                    assetsReplacers.Clear();
+                    bundleReplacers.Clear();
+                    //Load AssetBundle using AssetTools.Net
+                    //Modify AssetBundles by removing assets named (Asset Reference) and all their dependencies.
+                    var am = new AssetsManager();
+                    var path = Path.Combine(bundleArtifactPath, build.assetBundleName);
+                    var temppath = Path.Combine(bundleArtifactPath, $"{build.assetBundleName}.tmp");
 
-                    //Update preload table before updating anything else
-                    for (int i = 0; i < fileCount; i++)
+                    var classDataPath = Path.Combine("Packages", "com.passivepicasso.bundlekit", "Library", "classdata.tpk");
+                    am.LoadClassPackage(classDataPath);
+
+                    if (File.Exists(temppath)) File.Delete(temppath);
+                    File.Move(path, temppath);
+
+                    using (var stream = File.OpenRead(temppath))
                     {
-                        assetsFile = am.LoadAssetsFileFromBundle(bun, i);
-                        if (assetsFile == null) continue; // This will occur if the index of this file is for a resS file which we don't need to process here.
+                        var bun = am.LoadBundleFile(stream);
+                        var fileCount = bun.file.NumFiles;
+                        var assetsFile = am.LoadAssetsFileFromBundle(bun, 0, true);
+                        var dependencies = assetsFile.file.dependencies.dependencies;
+                        var initialDependencyCount = dependencies.Count;
+                        am.LoadClassDatabaseFromPackage(assetsFile.file.typeTree.unityVersion);
 
-                        var bundleAssets = assetsFile.table.GetAssetsOfType((int)AssetClassID.AssetBundle);
-                        if (bundleAssets.Count > 0)
+                        //Update preload table before updating anything else
+                        for (int i = 0; i < fileCount; i++)
                         {
-                            var assetBundleAsset = bundleAssets[0];
-                            UpdatePreloadTable(am, assetsFile, assetBundleAsset, remapContext);
+                            assetsFile = am.LoadAssetsFileFromBundle(bun, i, true);
+                            if (assetsFile == null) continue; // This will occur if the index of this file is for a resS file which we don't need to process here.
+
+                            var bundleAssets = assetsFile.table.GetAssetsOfType((int)AssetClassID.AssetBundle);
+                            if (bundleAssets.Count > 0)
+                            {
+                                var assetBundleAsset = bundleAssets[0];
+                                UpdatePreloadTable(am, assetsFile, assetBundleAsset, remapContext);
+                            }
                         }
-                    }
 
-                    // Remove all (Asset Reference)s from bundles, then update all references to those assets with references to the original assets file.
-                    // Additionally update bundle dependencies to include Resources.assets as a dependency
-                    for (int i = 0; i < fileCount; i++)
-                    {
-                        assetsFile = am.LoadAssetsFileFromBundle(bun, i);
-                        if (assetsFile == null) continue; // This will occur if the index of this file is for a resS file which we don't need to process here.
-
-                        var bundleAssets = assetsFile.table.GetAssetsOfType((int)AssetClassID.AssetBundle);
-                        if (bundleAssets.Count > 0)
+                        // Remove all (Asset Reference)s from bundles, then update all references to those assets with references to the original assets file.
+                        // Additionally update bundle dependencies to include Resources.assets as a dependency
+                        for (int i = 0; i < fileCount; i++)
                         {
-                            var assetBundleAsset = bundleAssets[0];
-                            var bundleReplacer = RemapExternalReferences(assetsReplacers, am, assetsFile, assetBundleAsset, remapContext, i);
-                            bundleReplacers.Add(bundleReplacer);
+                            assetsFile = am.LoadAssetsFileFromBundle(bun, i, true);
+                            if (assetsFile == null) continue; // This will occur if the index of this file is for a resS file which we don't need to process here.
+
+                            var bundleAssets = assetsFile.table.GetAssetsOfType((int)AssetClassID.AssetBundle);
+                            if (bundleAssets.Count > 0)
+                            {
+                                var assetBundleAsset = bundleAssets[0];
+                                var bundleReplacer = RemapExternalReferences(assetsReplacers, am, assetsFile, assetBundleAsset, remapContext, i);
+                                bundleReplacers.Add(bundleReplacer);
+                            }
                         }
-                    }
 
-                    using (var file = File.OpenWrite(path))
-                    using (var writer = new AssetsFileWriter(file))
-                        bun.file.Write(writer, bundleReplacers);
-
-                    if (buildCompression != Compression.Uncompressed)
+                        //write out chagnes to bundle
                         using (var file = File.OpenWrite(path))
                         using (var writer = new AssetsFileWriter(file))
-                            switch (buildCompression)
-                            {
-                                case Compression.LZMA:
-                                    bun.file.Pack(bun.file.reader, writer, AssetBundleCompressionType.LZMA);
-                                    break;
-                                case Compression.LZ4:
-                                    bun.file.Pack(bun.file.reader, writer, AssetBundleCompressionType.LZ4);
-                                    break;
-                            }
-                }
+                            bun.file.Write(writer, bundleReplacers);
+                    }
 
-                if (File.Exists(temppath)) File.Delete(temppath);
+                    if (File.Exists(temppath)) File.Delete(temppath);
+                    if (buildCompression != Compression.Uncompressed)
+                    {
+                        File.Move(path, temppath);
+                        using (var stream = File.OpenRead(temppath))
+                        {
+                            var bun = am.LoadBundleFile(stream);
+                            using (var file = File.OpenWrite(path))
+                            using (var writer = new AssetsFileWriter(file))
+                                switch (buildCompression)
+                                {
+                                    case Compression.LZMA:
+                                        bun.file.Pack(bun.file.reader, writer, AssetBundleCompressionType.LZMA);
+                                        break;
+                                    case Compression.LZ4:
+                                        bun.file.Pack(bun.file.reader, writer, AssetBundleCompressionType.LZ4);
+                                        break;
+                                }
+                        }
+                        if (File.Exists(temppath)) File.Delete(temppath);
+                    }
+                }
             }
 
             CopyModifiedAssetBundles(bundleArtifactPath, pipeline);
@@ -181,6 +199,7 @@ namespace BundleKit.PipelineJobs
                 .ToDictionary(map => (map.BundlePointer.fileId, map.BundlePointer.pathId),
                               map => (fileId: dependencies.Count + 1, map.ResourcePointer.pathId));
 
+            var dependencyPaths = new HashSet<string>();
 
             foreach (var assetFileInfo in assetsFileInst.table.assetFileInfo)
             {
@@ -194,6 +213,9 @@ namespace BundleKit.PipelineJobs
                     var assetExt = am.GetExtAsset(assetsFileInst, 0, assetFileInfo.index);
                     AssetTypeValueField baseField = assetExt.instance.GetBaseField();
 
+                    //Collect the dependency;
+                    dependencyPaths.Add(assetExt.file.path);
+
                     //add remover for this asset
                     if (!assetsReplacers.Any(ar => ar.GetPathID() == pathId))
                         assetsReplacers.Add(new AssetsRemover(0, pathId, (int)type));
@@ -201,6 +223,8 @@ namespace BundleKit.PipelineJobs
                     //add remover for all this asset's dependencies
                     foreach (var (asset, pptr, assetName, assetFileName, fileId, pathID, depth) in assetExt.file.GetDependentAssetIds(baseField, am))
                     {
+                        //Collect the dependency;
+                        dependencyPaths.Add(asset.file.path);
                         if (!assetsReplacers.Any(ar => ar.GetPathID() == pathID && ar.GetFileID() == fileId))
                             assetsReplacers.Add(new AssetsRemover(fileId, pathID, (int)asset.info.curFileType,
                                                     AssetHelper.GetScriptIndex(asset.file.file, asset.info)));
@@ -214,6 +238,8 @@ namespace BundleKit.PipelineJobs
                     //add remover for all dependencies on this asset
                     foreach (var (asset, pptr, assetName, assetFileName, fileId, pathID, depth) in assetExt.file.GetDependentAssetIds(baseField, am))
                     {
+                        //Collect the dependency;
+                        dependencyPaths.Add(asset.file.path);
                         if (!assetsReplacers.Any(ar => ar.GetPathID() == pathID && ar.GetFileID() == fileId))
                             assetsReplacers.Add(new AssetsRemover(fileId, pathID, (int)asset.info.curFileType,
                                                     AssetHelper.GetScriptIndex(asset.file.file, asset.info)));
