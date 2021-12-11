@@ -121,6 +121,9 @@ namespace BundleKit.PipelineJobs
                             UpdatePreloadTable(am, assetsFile, assetBundleAsset, remapContext);
                         }
                     }
+
+                    // Remove all (Asset Reference)s from bundles, then update all references to those assets with references to the original assets file.
+                    // Additionally update bundle dependencies to include Resources.assets as a dependency
                     for (int i = 0; i < fileCount; i++)
                     {
                         assetsFile = am.LoadAssetsFileFromBundle(bun, i);
@@ -130,7 +133,7 @@ namespace BundleKit.PipelineJobs
                         if (bundleAssets.Count > 0)
                         {
                             var assetBundleAsset = bundleAssets[0];
-                            var bundleReplacer = RemapExternalReferences(assetsReplacers, am, assetsFile, assetBundleAsset, remapContext);
+                            var bundleReplacer = RemapExternalReferences(assetsReplacers, am, assetsFile, assetBundleAsset, remapContext, i);
                             bundleReplacers.Add(bundleReplacer);
                         }
                     }
@@ -161,7 +164,7 @@ namespace BundleKit.PipelineJobs
             return Task.CompletedTask;
         }
 
-        private static BundleReplacerFromMemory RemapExternalReferences(List<AssetsReplacer> assetsReplacers, AssetsManager am, AssetsFileInstance assetsFileInst, AssetFileInfoEx assetBundleInfo, RemapContext remapContext)
+        private static BundleReplacerFromMemory RemapExternalReferences(List<AssetsReplacer> assetsReplacers, AssetsManager am, AssetsFileInstance assetsFileInst, AssetFileInfoEx assetBundleInfo, RemapContext remapContext, int fileIndex)
         {
             var assetBundleExtAsset = am.GetExtAsset(assetsFileInst, 0, assetBundleInfo.index);
             var bundleBaseField = assetBundleExtAsset.instance.GetBaseField();
@@ -195,7 +198,7 @@ namespace BundleKit.PipelineJobs
                     if (!assetsReplacers.Any(ar => ar.GetPathID() == pathId))
                         assetsReplacers.Add(new AssetsRemover(0, pathId, (int)type));
 
-                    //add remover for all dependencies on this asset
+                    //add remover for all this asset's dependencies
                     foreach (var (asset, pptr, assetName, assetFileName, fileId, pathID, depth) in assetExt.file.GetDependentAssetIds(baseField, am))
                     {
                         if (!assetsReplacers.Any(ar => ar.GetPathID() == pathID && ar.GetFileID() == fileId))
@@ -205,7 +208,6 @@ namespace BundleKit.PipelineJobs
                 }
                 else if (name.Contains("(Custom Asset)"))
                 {
-
                     var assetExt = am.GetExtAsset(assetsFileInst, 0, assetFileInfo.index);
                     AssetTypeValueField baseField = assetExt.instance.GetBaseField();
 
@@ -266,7 +268,7 @@ namespace BundleKit.PipelineJobs
                 assetsFileInst.file.Write(writer, 0, assetsReplacers);
                 newAssetData = bundleStream.ToArray();
             }
-            var bundleReplacer = new BundleReplacerFromMemory(assetsFileInst.name, assetsFileInst.name, true, newAssetData, -1);
+            var bundleReplacer = new BundleReplacerFromMemory(assetsFileInst.name, assetsFileInst.name, true, newAssetData, fileIndex);
             return bundleReplacer;
         }
 
