@@ -108,7 +108,7 @@ namespace BundleKit.Building
                 {
                     string msg = string.Format(@"File '{0}' contains a file identifier collision between {1} ({2}) and {3} ({4}) at id {5}. Objects will be missing from the bundle!
 You can work around this issue by changing the 'FileID Generator Seed' found in the Scriptable Build Pipeline Preferences window.", 
-                        internalName, obj, BuildCacheUtilityWrapper.GetMainTypeForObject(obj), priorObject, BuildCacheUtilityWrapper.GetMainTypeForObject(priorObject), serializationInfo.serializationIndex);
+                        internalName, obj, BuildCacheUtility.GetMainTypeForObject(obj), priorObject, BuildCacheUtility.GetMainTypeForObject(priorObject), serializationInfo.serializationIndex);
                     throw new BuildFailedException(msg);
                 }
                 consumedIds.Add(serializationInfo.serializationIndex, obj);
@@ -205,7 +205,7 @@ You can work around this issue by changing the 'FileID Generator Seed' found in 
 
         internal static List<ObjectIdentifier> GetSortedSceneObjectIdentifiers(List<ObjectIdentifier> objects)
         {
-            var types = new List<System.Type>(BuildCacheUtilityWrapper.GetMainTypeForObjects(objects));
+            var types = new List<System.Type>(BuildCacheUtility.GetMainTypeForObjects(objects));
             var sortedObjects = new List<SortObject>();
             for (int i = 0; i < objects.Count; i++)
                 sortedObjects.Add(new SortObject { sortIndex = GetSortIndex(types[i]), objectId = objects[i] });

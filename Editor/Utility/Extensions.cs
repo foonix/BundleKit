@@ -1,8 +1,13 @@
 ﻿using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 using BundleKit.Assets;
+using BundleKit.Building;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEditor.Build.Content;
+using UnityEditor.Build.Pipeline.Interfaces;
+using UnityEditor.Build.Pipeline.Utilities;
 
 namespace BundleKit.Utility
 {
@@ -12,17 +17,34 @@ namespace BundleKit.Utility
         {
             return collection == null || collection.Count == 0;
         }
+        public static AssetTypeValueField GetField(this AssetTypeValueField valueField, string fieldPath)
+        {
+            var field = valueField;
+            foreach (var pathField in fieldPath.Split('/'))
+                field = field.Get(pathField);
+            return field;
+        }
+        public static AssetTypeValueField Get(this AssetTypeValueField valueField, params string[] fieldPath)
+        {
+            var field = valueField;
+            foreach (var pathField in fieldPath)
+                field = field.Get(pathField);
+            return field;
+        }
 
         public static AssetTypeValue GetValue(this AssetTypeValueField valueField, string fieldName)
         {
-            return valueField.Get(fieldName).GetValue();
+            var field = valueField;
+            foreach (var pathField in fieldName.Split('/'))
+                field = field.Get(pathField);
+            return field.GetValue();
         }
 
         public static void SetValue(this AssetTypeValueField valueField, string fieldName, object value)
         {
             valueField.Get(fieldName).GetValue().Set(value);
         }
-        public static void RemapPPtrs(this AssetTypeValueField field, AssetsFileInstance inst, IDictionary<(int fileId, long pathId), (int fileId, long pathId)> map)
+        public static void RemapPPtrs(this AssetTypeValueField field, IDictionary<(int fileId, long pathId), (int fileId, long pathId)> map)
         {
             var fieldStack = new Stack<AssetTypeValueField>();
             fieldStack.Push(field);
@@ -46,9 +68,6 @@ namespace BundleKit.Utility
                             var pathIdField = child.Get("m_PathID").GetValue();
                             var pathId = pathIdField.AsInt64();
                             var fileId = fileIdField.AsInt();
-
-                            //not a null pptr
-                            if (pathId == 0) continue;
                             if (!map.ContainsKey((fileId, pathId))) continue;
 
                             var newPPtr = map[(fileId, pathId)];
@@ -62,41 +81,27 @@ namespace BundleKit.Utility
             }
 
         }
-        public static void SetPPtrsFileId(this AssetTypeValueField field, AssetsFileInstance inst, int newFileId)
+
+        public static AssetTypeValueField CreateEntry(this AssetTypeValueField containerArray, string name, int fileId, long pathId, int preloadIndex = 0, int preloadSize = 0)
         {
-            var fieldStack = new Stack<AssetTypeValueField>();
-            fieldStack.Push(field);
-            while (fieldStack.Any())
-            {
-                var current = fieldStack.Pop();
-                foreach (AssetTypeValueField child in current.children)
-                {
-                    //not a value (ie not an int)
-                    if (!child.templateField.hasValue)
-                    {
-                        //not array of values either
-                        if (child.templateField.isArray && child.templateField.children[1].valueType != EnumValueTypes.ValueType_None)
-                            continue;
+            var pair = ValueBuilder.DefaultValueFieldFromArrayTemplate(containerArray);
+            //Name the asset identified by this element
+            pair.Get("first").GetValue().Set(name);
 
-                        string typeName = child.templateField.type;
-                        //is a pptr
-                        if (typeName.StartsWith("PPtr<") && typeName.EndsWith(">"))
-                        {
-                            var fileIdField = child.Get("m_FileID").GetValue();
-                            var pathId = child.Get("m_PathID").GetValue().AsInt64();
+            //Get fields for populating index and 
+            var second = pair.Get("second");
+            var assetField = second.Get("asset");
 
-                            //not a null pptr
-                            if (pathId == 0) continue;
+            //We are not constructing a preload table, so we are setting these all to zero
+            second.SetValue("preloadIndex", preloadIndex);
+            second.SetValue("preloadSize", preloadSize);
 
-                            fileIdField.Set(newFileId);
-                        }
-                        //recurse through dependencies
-                        fieldStack.Push(child);
-                    }
-                }
-            }
+            // Update the fileId and PathID so that asset can be located within the bundle
+            // We zero out the fileId because the asset is in the local file, not a dependent file
+            assetField.SetValue("m_FileID", fileId);
+            assetField.SetValue("m_PathID", pathId);
+            return pair;
         }
-
         public static AssetID ConvertToAssetID(this AssetsFileInstance inst, int fileId, long pathId)
         {
             return new AssetID(ConvertToInstance(inst, fileId).path, pathId);
@@ -109,10 +114,62 @@ namespace BundleKit.Utility
             else
                 return inst.dependencies[fileId - 1];
         }
-        public static IEnumerable<AssetData> GetDependentAssetIds(this AssetsFileInstance inst, AssetsManager am, AssetTypeValueField field, int depth = 1, HashSet<AssetID> visitedAssetIds = null)
+
+        public static IEnumerable<AssetData> GetDependentAssetIds(this AssetsFileInstance inst, AssetTypeValueField field, AssetsManager am)
         {
-            if (visitedAssetIds == null)
-                visitedAssetIds = new HashSet<AssetID>();
+            var visited = new HashSet<AssetID>();
+            var fieldStack = new Stack<(AssetsFileInstance inst, AssetTypeValueField field, int depth)>();
+            fieldStack.Push((inst, field, depth: 0));
+            while (fieldStack.Any())
+            {
+                var set = fieldStack.Pop();
+                var current = set.field;
+                var currentInst = set.inst;
+                var depth = set.depth;
+
+                foreach (var child in current.children)
+                {
+                    //not a value (ie not an int)
+                    if (!child.templateField.hasValue)
+                    {
+                        //not array of values either
+                        if (child.templateField.isArray && child.templateField.children[1].valueType != EnumValueTypes.ValueType_None)
+                            continue;
+
+                        string typeName = child.templateField.type;
+                        //is a pptr
+                        if (typeName.StartsWith("PPtr<") && typeName.EndsWith(">"))
+                        {
+                            var fileId = child.Get("m_FileID").GetValue().AsInt();
+                            var pathId = child.Get("m_PathID").GetValue().AsInt64();
+
+                            var assetId = currentInst.ConvertToAssetID(fileId, pathId);
+                            if (visited.Contains(assetId)) continue;
+                            visited.Add(assetId);
+
+                            //not a null pptr
+                            if (pathId == 0) continue;
+
+                            var ext = am.GetExtAsset(currentInst, fileId, pathId);
+                            //we don't want to process monobehaviours as thats a project in itself
+                            if (ext.info.curFileType == (int)AssetClassID.MonoBehaviour) continue;
+
+                            var name = GetName(ext);
+
+                            yield return (ext, child, name, ext.file.name, fileId, pathId, depth);
+
+                            fieldStack.Push((ext.file, ext.instance.GetBaseField(), depth + 1));
+                        }
+                        else
+                            //recurse through dependencies
+                            fieldStack.Push((currentInst, child, depth + 1));
+                    }
+                }
+            }
+
+        }
+        public static IEnumerable<AssetData> GetDependentAssetIdsRecursive(this AssetsFileInstance inst, AssetTypeValueField field, AssetsManager am, int depth = 1)
+        {
             foreach (AssetTypeValueField child in field.children)
             {
                 //not a value (ie not an int)
@@ -130,46 +187,100 @@ namespace BundleKit.Utility
                         long pathId = child.Get("m_PathID").GetValue().AsInt64();
 
                         //not a null pptr
-                        if (pathId == 0)
-                            continue;
+                        if (pathId == 0) continue;
 
-                        var assetId = inst.ConvertToAssetID(fileId, pathId);
-                        //not already visited and not a monobehaviour
-                        if (visitedAssetIds.Contains(assetId)) continue;
-                        visitedAssetIds.Add(assetId);
 
                         var ext = am.GetExtAsset(inst, fileId, pathId);
-                        var name = GetName(ext);
 
                         //we don't want to process monobehaviours as thats a project in itself
                         if (ext.info.curFileType == (int)AssetClassID.MonoBehaviour) continue;
+                        var name = GetName(ext);
 
                         yield return (ext, child, name, ext.file.name, fileId, pathId, depth);
 
                         //recurse through dependencies
-                        foreach (var dep in GetDependentAssetIds(ext.file, am, ext.instance.GetBaseField(), depth + 1, visitedAssetIds))
+                        foreach (var dep in GetDependentAssetIdsRecursive(ext.file, ext.instance.GetBaseField(), am, depth + 1))
                             yield return dep;
                     }
-                    //recurse through dependencies
-                    foreach (var dep in GetDependentAssetIds(inst, am, child, depth + 1, visitedAssetIds))
-                        yield return dep;
+                    else
+                        //recurse through dependencies
+                        foreach (var dep in GetDependentAssetIdsRecursive(inst, child, am, depth + 1))
+                            yield return dep;
                 }
             }
         }
         public static string GetName(this AssetExternal asset)
         {
-            return AssetHelper.GetAssetNameFastNaive(asset.file.file, asset.info);
-            //switch ((AssetClassID)asset.info.curFileType)
-            //{
-            //    case AssetClassID.Shader:
-            //        var parsedFormField = asset.instance.GetBaseField().Get("m_ParsedForm");
-            //        var shaderNameField = parsedFormField.Get("m_Name");
-            //        return shaderNameField.GetValue().AsString();
-            //    default:
-            //        var foundName = asset.info.ReadName(asset.file.file, out var name);
-            //        if (foundName) return name;
-            //        else return string.Empty;
-            //}
+            //return AssetHelper.GetAssetNameFastNaive(asset.file.file, asset.info);
+            switch ((AssetClassID)asset.info.curFileType)
+            {
+                case AssetClassID.Shader:
+                    var parsedFormField = asset.instance.GetBaseField().Get("m_ParsedForm");
+                    var shaderNameField = parsedFormField.Get("m_Name");
+                    return shaderNameField.GetValue().AsString();
+                default:
+                    var foundName = asset.info.ReadName(asset.file.file, out var name);
+                    if (foundName) return name;
+                    else return string.Empty;
+            }
+        }
+
+        public static void GetOrAdd<TKey, TValue>(this IDictionary<TKey, TValue> dictionary, TKey key, out TValue value) where TValue : new()
+        {
+            if (!dictionary.TryGetValue(key, out value))
+            {
+                value = new TValue();
+                dictionary.Add(key, value);
+            }
+        }
+
+        public static void Swap<T>(this IList<T> list, int first, int second)
+        {
+            T value = list[second];
+            list[second] = list[first];
+            list[first] = value;
+        }
+
+        public static void ExtractCommonCacheData(IBuildCache cache, IEnumerable<ObjectIdentifier> includedObjects, IEnumerable<ObjectIdentifier> referencedObjects, HashSet<Type> uniqueTypes, List<ObjectTypes> objectTypes, HashSet<CacheEntry> dependencies)
+        {
+            if (includedObjects != null)
+            {
+                foreach (ObjectIdentifier includedObject in includedObjects)
+                {
+                    Type[] sortedUniqueTypesForObject = BuildCacheUtility.GetSortedUniqueTypesForObject(includedObject);
+                    objectTypes.Add(new ObjectTypes(includedObject, sortedUniqueTypesForObject));
+                    uniqueTypes.UnionWith(sortedUniqueTypesForObject);
+                }
+            }
+
+            if (referencedObjects != null)
+            {
+                foreach (ObjectIdentifier referencedObject in referencedObjects)
+                {
+                    Type[] sortedUniqueTypesForObject2 = BuildCacheUtility.GetSortedUniqueTypesForObject(referencedObject);
+                    objectTypes.Add(new ObjectTypes(referencedObject, sortedUniqueTypesForObject2));
+                    uniqueTypes.UnionWith(sortedUniqueTypesForObject2);
+                    dependencies.Add(cache.GetCacheEntry(referencedObject));
+                }
+            }
+
+            dependencies.UnionWith(uniqueTypes.Select(cache.GetCacheEntry));
+        }
+
+
+        [Serializable]
+        public struct ObjectTypes
+        {
+            public ObjectIdentifier ObjectID;
+
+            public Type[] Types;
+
+            public ObjectTypes(ObjectIdentifier objectID, Type[] types)
+            {
+                ObjectID = objectID;
+                Types = types;
+            }
         }
     }
+
 }

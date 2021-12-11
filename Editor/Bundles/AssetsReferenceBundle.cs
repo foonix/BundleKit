@@ -1,6 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using BundleKit.Assets;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using UnityEditor;
 using UnityEngine;
 
@@ -10,15 +9,7 @@ namespace BundleKit.Bundles
     {
         public Material[] CustomMaterials;
         public Object[] Assets;
-
-        public List<(long, long)> mappings = new List<(long, long)>();
-        public long this[long pathId]
-        {
-            get
-            {
-                return mappings.FirstOrDefault(m => m.Item1 == pathId).Item2;
-            }
-        }
+        public MappingData mappingData;
 
         [InitializeOnLoadMethod]
         static void ReloadAssetsReferenceBundles()

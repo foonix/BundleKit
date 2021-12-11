@@ -9,6 +9,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using ThunderKit.Common.Logging;
+using ThunderKit.Core.Data;
 using ThunderKit.Core.Paths;
 using ThunderKit.Core.Pipelines;
 using UnityEditor;
@@ -19,7 +20,6 @@ namespace BundleKit.PipelineJobs
     public class CreateResourceBundle : PipelineJob
     {
         public DefaultAsset bundle;
-        public string dataDirectory;
         public string outputAssetBundlePath;
         public string nameRegexFilter = string.Empty;
         public AssetClassID[] classes;
@@ -29,177 +29,70 @@ namespace BundleKit.PipelineJobs
         {
             using (var progressBar = new ProgressBar("Constructing AssetBundle"))
             {
-                am = new AssetsManager();
+                InitializeContainers(out var assetsReplacers, out var contexts, out var targetAssets, out var newContainerChildren, out var nameRegex);
+                InitializePaths(out var resourcesFilePath, out var ggmPath, out var fileName, out var path, out var dataDirectoryPath);
+                InitializeAssetTools(resourcesFilePath, path, out var bun, out var bundleAssetsFile, out var resourcesInst, out var assetBundleAsset, out var assetBundleExtAsset, out var bundleBaseField);
 
-                var assetsReplacers = new List<AssetsReplacer>();
-                var contexts = new List<string>();
-                var nameRegex = new Regex(nameRegexFilter);
+                targetAssets = CollectAssets(progressBar, targetAssets, nameRegex, resourcesInst);
 
-                InitializePaths(pipeline, out var resourcesFilePath, out var ggmPath, out var fileName, out var path, out var dataDirectoryPath);
-
-                //Load bundle file and its AssetsFile
-                var bun = am.LoadBundleFile(path, true);
-                var bundleAssetsFile = am.LoadAssetsFileFromBundle(bun, 0);
-
-                // Load assets files from Resources
-                var resourcesInst = am.LoadAssetsFile(resourcesFilePath, true);
-
-                //Load AssetBundle asset from Bundle AssetsFile so that we can update its data later
-                var assetBundleAsset = bundleAssetsFile.table.GetAssetsOfType((int)AssetClassID.AssetBundle)[0];
-                var assetBundleExtAsset = am.GetExtAsset(bundleAssetsFile, 0, assetBundleAsset.index);
-
-                //load data for classes
-                var classDataPath = Path.Combine("Packages", "com.passivepicasso.bundlekit", "Library", "classdata.tpk");
-                var fullPath = Path.GetFullPath(classDataPath);
-                am.LoadClassPackage(classDataPath);
-                am.LoadClassDatabaseFromPackage(resourcesInst.file.typeTree.unityVersion);
-
-                // Iterate over all requested Class types and collect the data required to copy over the required asset information
-                // This step will recurse over dependencies so all required assets will become available from the resulting bundle
-                progressBar.Update(title: "Mapping PathIds to Resource Paths");
-                var targetAssets = Enumerable.Empty<AssetData>();
-                progressBar.Update(title: "Collecting Assets");
-                foreach (var assetClass in classes)
-                {
-                    var fileInfos = resourcesInst.table.GetAssetsOfType((int)assetClass);
-                    for (int x = 0; x < fileInfos.Count; x++)
-                    {
-                        progressBar.Update(title: $"Collecting Assets ({x} / {fileInfos.Count})");
-
-                        var assetFileInfo = fileInfos[x];
-
-                        // If an asset has no name continue, but why?
-                        if (!assetFileInfo.ReadName(resourcesInst.file, out var name)) continue;
-                        // If a name Regex filter is applied, and it does not match, continue
-                        if (!string.IsNullOrEmpty(nameRegexFilter) && !nameRegex.IsMatch(name)) continue;
-
-                        var progress = x / (float)fileInfos.Count;
-                        progressBar.Update($"[Loading] {name}", progress: progress);
-
-                        var assetTypeInstanceField = am.GetTypeInstance(resourcesInst, assetFileInfo).GetBaseField();
-
-                        var ext = am.GetExtAsset(resourcesInst, 0, assetFileInfo.index);
-
-                        // Find name, path and fileId of each asset referenced directly and indirectly by assetFileInfo including itself
-                        targetAssets = targetAssets.Concat(resourcesInst.GetDependentAssetIds(am, assetTypeInstanceField)
-                                                                        .Prepend((ext, null, name, "resources.assets", 0, assetFileInfo.index, 0)));
-
-                    }
-                }
-
-                // Attempt to populate the AssetBundle asset's m_Container so it has a proper list of asssets contained by the bundle
-                // Update bundle assets name and bundle name to the name specified in outputAssetBundlePath
-                var bundleBaseField = assetBundleExtAsset.instance.GetBaseField();
-                bundleBaseField.Get("m_Name").GetValue().Set(fileName);
-                bundleBaseField.Get("m_AssetBundleName").GetValue().Set(fileName);
-                var containerArray = bundleBaseField.Get("m_Container").Get("Array");
-                var newContainerChildren = new List<AssetTypeValueField>();
-
-
-                //Copy dependencies array from resources.assets and add dependency to resources.assets
-                var dependencyFieldChildren = new List<AssetTypeValueField>();
-                var dependencies = resourcesInst.file.dependencies.dependencies.ToList();
-                var dependencyArray = bundleBaseField.Get("m_Dependencies").Get("Array");
-                //dependencies.Add(new AssetsFileDependency
-                //{
-                //    assetPath = "resources.assets",
-                //    originalAssetPath = "resources.assets",
-                //    bufferedPath = string.Empty
-                //});
-                for(int i = 0; i < dependencies.Count; i++)
-                {
-                    dependencies[i].assetPath = $"{dataDirectoryPath}{dependencies[i].assetPath}";
-                }
-                bundleAssetsFile.file.dependencies.dependencyCount = dependencies.Count;
-                bundleAssetsFile.file.dependencies.dependencies = dependencies;
-                foreach (var dep in dependencies)
-                {
-                    var depTemplate = ValueBuilder.DefaultValueFieldFromArrayTemplate(dependencyArray);
-                    depTemplate.GetValue().Set(dep.assetPath);
-                    dependencyFieldChildren.Add(depTemplate);
-                }
-                dependencyArray.SetChildrenList(dependencyFieldChildren.ToArray());
-
-                var context = string.Empty;
                 var realizedAssetTargets = targetAssets.OrderBy(ta => ta.Depth).Distinct().ToArray();
                 long nextId = 2;
-                var originCurrentMap = new Dictionary<(int fileId, long pathId), (int fileId, long pathId)>();
-                var currentOriginMap = new Dictionary<(int fileId, long pathId), (int fileId, long pathId)>();
-                foreach (var (asset, pptr, assetName, assetFileName, fileId, pathId, depth) in realizedAssetTargets)
+                var assetMap = new List<AssetMap>();
+                for (int i = 0; i < realizedAssetTargets.Length; i++)
                 {
+                    var (asset, pptr, assetName, assetFileName, fileId, pathId, depth) = realizedAssetTargets[i];
                     nextId++;
                     //Store map of new fileId and PathId to original fileId and pathid
-                    originCurrentMap[(fileId, pathId)] = (0, nextId);
-                    currentOriginMap[(0, nextId)] = (fileId, pathId);
+                    assetMap.Add(new AssetMap
+                    {
+                        name = assetName,
+                        ResourcePointer = (fileId, pathId),
+                        BundlePointer = (0, nextId)
+                    });
+                    realizedAssetTargets[i] = (asset, pptr, assetName, assetFileName, 0, nextId, depth);
                 }
-                nextId = 2;
+
+                // Update bundle assets name and bundle name to the name specified in outputAssetBundlePath
+                bundleBaseField.Get("m_Name").GetValue().Set(fileName);
+                bundleBaseField.Get("m_AssetBundleName").GetValue().Set(fileName);
+
+                // Get container for populating asset listings
+                var containerArray = bundleBaseField.Get("m_Container").Get("Array");
+                var mappingData = assetMap.ToDictionary(map => ((int, long))map.ResourcePointer, map => ((int, long))map.BundlePointer);
                 foreach (var (asset, pptr, assetName, assetFileName, fileId, pathId, depth) in realizedAssetTargets)
                 {
-                    //if (depth > 0)
-                    //{
-                    //    continue;
-                    //}
-                    if (!string.IsNullOrEmpty(context)) contexts.Add(context);
-
-                    context = $"{assetName}\r\n";
-
                     var assetBaseField = asset.instance.GetBaseField();
-                    assetBaseField.RemapPPtrs(asset.file, originCurrentMap);
+                    assetBaseField.RemapPPtrs(mappingData);
                     if (assetBaseField.GetFieldType() == "Texture2D")
                     {
                         var streamDataField = assetBaseField.Get("m_StreamData");
-                        streamDataField.SetValue("path", $"{dataDirectoryPath}{streamDataField.GetValue("path").AsString()}");
-                        //var tf = TextureFile.ReadTextureFile(assetBaseField);
-                        //if (tf != null)
-                        //{
-                        //var value = tf.GetTextureData(dataDirectoryPath);
-                        //imageDataArrayField.Set(value);
-                        //var valueArray = new AssetTypeArray()
-                        //{
-                        //    size = value.Length
-                        //};
-                        //var imageDataField = assetBaseField.Get("image data");
-                        //var data = new AssetTypeValueField[value.Length];
-                        //for (int i = 0; i < value.Length; i++)
-                        //{
-                        //    var dataField = ValueBuilder.DefaultValueFieldFromArrayTemplate(imageDataField);
-                        //    dataField.GetValue().Set(value[i]);
-                        //    data[i] = dataField;
-                        //}
-                        //imageDataField.SetChildrenList(data);
-                        //streamDataField.GetValue().Set(null);
-                        //}
+                        streamDataField.SetValue("path", Path.Combine(dataDirectoryPath, streamDataField.GetValue("path").AsString()));
                     }
 
                     var otherBytes = asset.instance.WriteToByteArray();
-                    var currentAssetReplacer = new AssetsReplacerFromMemory(0, ++nextId, (int)asset.info.curFileType,
+                    var currentAssetReplacer = new AssetsReplacerFromMemory(0, pathId, (int)asset.info.curFileType,
                                                                             AssetHelper.GetScriptIndex(asset.file.file, asset.info),
                                                                             otherBytes);
                     assetsReplacers.Add(currentAssetReplacer);
 
-                    //if (depth == 0)
                     // Create entry in m_Container to make this asset visible in the API, otherwise said the asset can be found with AssetBundles.LoadAsset* methods
-                    newContainerChildren.Add(CreateIndexEntry(containerArray, assetName, 0, nextId));
-
-                    context += GenerateContextLog(asset, depth);
+                    newContainerChildren.Add(containerArray.CreateEntry(assetName, 0, pathId));
                 }
 
-                if (!string.IsNullOrEmpty(context)) contexts.Add(context);
-
                 //// Create a text asset to store information that will be used to modified bundles built by users to redirect references to the original source files
-                var templateField = new AssetTypeTemplateField();
-
+                var mappingDataFieldTemplate = new AssetTypeTemplateField();
                 var cldbType = AssetHelper.FindAssetClassByID(am.classFile, (int)AssetClassID.TextAsset);
-                templateField.FromClassDatabase(am.classFile, cldbType, 0);
-
-                var textAssetBaseField = ValueBuilder.DefaultValueFieldFromTemplate(templateField);
+                mappingDataFieldTemplate.FromClassDatabase(am.classFile, cldbType, 0);
+                var textAssetBaseField = ValueBuilder.DefaultValueFieldFromTemplate(mappingDataFieldTemplate);
                 textAssetBaseField.Get("m_Name").GetValue().Set("mappingdata.json");
-                textAssetBaseField.Get("m_Script").GetValue().Set("I have some sick text");
+                var mapArray = new MappingData { AssetMaps = assetMap.ToArray() };
+                var mapJson = EditorJsonUtility.ToJson(mapArray, true);
+                textAssetBaseField.Get("m_Script").GetValue().Set(mapJson);
 
                 assetsReplacers.Add(new AssetsReplacerFromMemory(0, ++nextId, cldbType.classId, 0xffff, textAssetBaseField.WriteToByteArray()));
                 {
                     // Use m_Container to construct an blank element for it
-                    var pair = CreateIndexEntry(containerArray, textAssetBaseField.GetValue("m_Name").AsString(), 0, nextId);
+                    var pair = containerArray.CreateEntry(textAssetBaseField.GetValue("m_Name").AsString(), 0, nextId);
                     newContainerChildren.Add(pair);
                 }
 
@@ -212,7 +105,6 @@ namespace BundleKit.PipelineJobs
                 assetsReplacers = assetsReplacers.OrderBy(repl => repl.GetPathID()).ToList();
 
                 if (File.Exists(outputAssetBundlePath)) File.Delete(outputAssetBundlePath);
-
 
                 byte[] newAssetData;
                 using (var bundleStream = new MemoryStream())
@@ -227,7 +119,6 @@ namespace BundleKit.PipelineJobs
                 using (var writer = new AssetsFileWriter(file))
                 {
                     var assetsFileName = $"CAB-{GUID.Generate()}";
-                    var resFileName = $"{assetsFileName}.resS";
                     bun.file.Write(writer, new List<BundleReplacer>
                     {
                         new BundleReplacerFromMemory(bundleAssetsFile.name, assetsFileName, true, newAssetData, newAssetData.Length),
@@ -239,43 +130,80 @@ namespace BundleKit.PipelineJobs
             return Task.CompletedTask;
         }
 
-        private static AssetTypeValueField CreateIndexEntry(AssetTypeValueField containerArray, string name, int fileId, long pathId)
+        private IEnumerable<AssetData> CollectAssets(ProgressBar progressBar, IEnumerable<AssetData> targetAssets, Regex nameRegex, AssetsFileInstance resourcesInst)
         {
-            var pair = ValueBuilder.DefaultValueFieldFromArrayTemplate(containerArray);
-            //Name the asset identified by this element
-            pair.Get("first").GetValue().Set(name);
 
-            //Get fields for populating index and 
-            var second = pair.Get("second");
-            var assetField = second.Get("asset");
+            // Iterate over all requested Class types and collect the data required to copy over the required asset information
+            // This step will recurse over dependencies so all required assets will become available from the resulting bundle
+            progressBar.Update(title: "Mapping PathIds to Resource Paths");
+            progressBar.Update(title: "Collecting Assets");
+            foreach (var assetClass in classes)
+            {
+                var fileInfos = resourcesInst.table.GetAssetsOfType((int)assetClass);
+                for (int x = 0; x < fileInfos.Count; x++)
+                {
+                    progressBar.Update(title: $"Collecting Assets ({x} / {fileInfos.Count})");
 
-            //We are not constructing a preload table, so we are setting these all to zero
-            second.SetValue("preloadIndex", 0);
-            second.SetValue("preloadSize", 0);
+                    var assetFileInfo = fileInfos[x];
 
-            // Update the fileId and PathID so that asset can be located within the bundle
-            // We zero out the fileId because the asset is in the local file, not a dependent file
-            assetField.SetValue("m_FileID", fileId);
-            assetField.SetValue("m_PathID", pathId);
-            return pair;
+                    // If an asset has no name continue, but why?
+                    if (!assetFileInfo.ReadName(resourcesInst.file, out var name)) continue;
+                    // If a name Regex filter is applied, and it does not match, continue
+                    if (!string.IsNullOrEmpty(nameRegexFilter) && !nameRegex.IsMatch(name)) continue;
+
+                    var progress = x / (float)fileInfos.Count;
+                    progressBar.Update($"[Loading] {name}", progress: progress);
+
+                    var assetTypeInstanceField = am.GetTypeInstance(resourcesInst, assetFileInfo).GetBaseField();
+
+                    var ext = am.GetExtAsset(resourcesInst, 0, assetFileInfo.index);
+
+                    // Find name, path and fileId of each asset referenced directly and indirectly by assetFileInfo including itself
+                    targetAssets = targetAssets.Concat(resourcesInst.GetDependentAssetIds(assetTypeInstanceField, am)
+                                                                    .Prepend((ext, null, name, "resources.assets", 0, assetFileInfo.index, 0)));
+                }
+            }
+
+            return targetAssets;
+        }
+        private void InitializeAssetTools(string resourcesFilePath, string path, out BundleFileInstance bun, out AssetsFileInstance bundleAssetsFile, out AssetsFileInstance resourcesInst, out AssetFileInfoEx assetBundleAsset, out AssetExternal assetBundleExtAsset, out AssetTypeValueField bundleBaseField)
+        {
+            am = new AssetsManager();
+            //Load bundle file and its AssetsFile
+            bun = am.LoadBundleFile(path, true);
+            bundleAssetsFile = am.LoadAssetsFileFromBundle(bun, 0);
+
+            // Load assets files from Resources
+            resourcesInst = am.LoadAssetsFile(resourcesFilePath, true);
+
+            //Load AssetBundle asset from Bundle AssetsFile so that we can update its data later
+            assetBundleAsset = bundleAssetsFile.table.GetAssetsOfType((int)AssetClassID.AssetBundle)[0];
+            assetBundleExtAsset = am.GetExtAsset(bundleAssetsFile, 0, assetBundleAsset.index);
+
+            //load data for classes
+            var classDataPath = Path.Combine("Packages", "com.passivepicasso.bundlekit", "Library", "classdata.tpk");
+            am.LoadClassPackage(classDataPath);
+            am.LoadClassDatabaseFromPackage(resourcesInst.file.typeTree.unityVersion);
+
+            bundleBaseField = assetBundleExtAsset.instance.GetBaseField();
         }
 
-        private void InitializePaths(Pipeline pipeline, out string resourcesFilePath, out string ggmPath, out string fileName, out string bundlePath, out string dataDirectoryPath)
+        private void InitializeContainers(out List<AssetsReplacer> assetsReplacers, out List<string> contexts, out IEnumerable<AssetData> targetAssets, out List<AssetTypeValueField> newContainerChildren, out Regex nameRegex)
         {
-            dataDirectoryPath = PathReference.ResolvePath(dataDirectory, pipeline, this);
+            assetsReplacers = new List<AssetsReplacer>();
+            contexts = new List<string>();
+            targetAssets = Enumerable.Empty<AssetData>();
+            newContainerChildren = new List<AssetTypeValueField>();
+            nameRegex = new Regex(nameRegexFilter);
+        }
+        private void InitializePaths(out string resourcesFilePath, out string ggmPath, out string fileName, out string bundlePath, out string dataDirectoryPath)
+        {
+            var settings = ThunderKitSetting.GetOrCreateSettings<ThunderKitSettings>();
+            dataDirectoryPath = Path.Combine(settings.GamePath, $"{Path.GetFileNameWithoutExtension(settings.GameExecutable)}_Data");
             resourcesFilePath = Path.Combine(dataDirectoryPath, "resources.assets");
             ggmPath = Path.Combine(dataDirectoryPath, "globalgamemanagers");
             fileName = Path.GetFileName(outputAssetBundlePath);
             bundlePath = AssetDatabase.GetAssetPath(bundle);
         }
-
-        private static string GenerateContextLog(AssetExternal asset, int depth)
-        {
-            var depthStr = depth == 0 ? string.Empty : Enumerable.Repeat("  ", depth).Aggregate((a, b) => $"{a}{b}");
-            var listDelim = "* ";// depth % 2 == 0 ? "* " : "- ";
-
-            return $"{depthStr}{listDelim}({(AssetClassID)asset.info.curFileType}) Name: \"{asset.GetName()}\"\r\n";
-        }
-
     }
 }

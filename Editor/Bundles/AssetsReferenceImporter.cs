@@ -40,7 +40,8 @@ namespace BundleKit.Bundles
             try
             {
                 var mappingDataJson = allAssets.OfType<TextAsset>().First(ta => ta.name == "mappingdata.json");
-                //var data = JsonUtility.FromJson<MappingData>(mappingDataJson.text);
+                var data = JsonUtility.FromJson<MappingData>(mappingDataJson.text);
+                bundleAsset.mappingData = data;
             }
             catch (Exception e)
             {
@@ -65,27 +66,30 @@ namespace BundleKit.Bundles
                 }
                 ctx.AddObjectToAsset(asset.name, asset);
             }
-            var validDefinitions = customMaterialDefinitions.Where(md => !string.IsNullOrEmpty(md.name) && !string.IsNullOrEmpty(md.shader)).ToArray();
-            var customMaterials = new Material[validDefinitions.Length];
-            for (int i = 0; i < validDefinitions.Length; i++)
+            if (customMaterialDefinitions != null && customMaterialDefinitions.Any())
             {
-                customMaterials[i] = new Material(Shader.Find(validDefinitions[i].shader))
+                var validDefinitions = customMaterialDefinitions.Where(md => !string.IsNullOrEmpty(md.name) && !string.IsNullOrEmpty(md.shader)).ToArray();
+                var customMaterials = new Material[validDefinitions.Length];
+                for (int i = 0; i < validDefinitions.Length; i++)
                 {
-                    name = $"{validDefinitions[i].name} (Custom Asset)",
-                    hideFlags = None
-                };
+                    customMaterials[i] = new Material(Shader.Find(validDefinitions[i].shader))
+                    {
+                        name = $"{validDefinitions[i].name} (Custom Asset)",
+                        hideFlags = None
+                    };
 
-                var nameHash = PackageHelper.GetStringHash(customMaterials[i].name);
-                var metaDataPath = Path.Combine("Library", "BundleKitMetaData", $"{nameHash}.json");
-                if (File.Exists(metaDataPath))
-                {
-                    var jsonData = File.ReadAllText(metaDataPath);
-                    var shaderData = JsonUtility.FromJson<SerializableMaterialData>(jsonData);
-                    shaderData.Apply(customMaterials[i], textureLookup);
+                    var nameHash = PackageHelper.GetStringHash(customMaterials[i].name);
+                    var metaDataPath = Path.Combine("Library", "BundleKitMetaData", $"{nameHash}.json");
+                    if (File.Exists(metaDataPath))
+                    {
+                        var jsonData = File.ReadAllText(metaDataPath);
+                        var shaderData = JsonUtility.FromJson<SerializableMaterialData>(jsonData);
+                        shaderData.Apply(customMaterials[i], textureLookup);
+                    }
+                    ctx.AddObjectToAsset(customMaterials[i].name, customMaterials[i]);
                 }
-                ctx.AddObjectToAsset(customMaterials[i].name, customMaterials[i]);
+                bundleAsset.CustomMaterials = customMaterials;
             }
-            bundleAsset.CustomMaterials = customMaterials;
         }
     }
 }
