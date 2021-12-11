@@ -104,7 +104,10 @@ namespace BundleKit.Utility
         }
         public static AssetID ConvertToAssetID(this AssetsFileInstance inst, int fileId, long pathId)
         {
-            return new AssetID(ConvertToInstance(inst, fileId).path, pathId);
+            var nextInst = ConvertToInstance(inst, fileId);
+            if (nextInst == null) return null;
+
+            return new AssetID(nextInst.path, pathId);
         }
 
         static AssetsFileInstance ConvertToInstance(AssetsFileInstance inst, int fileId)
@@ -144,6 +147,7 @@ namespace BundleKit.Utility
                             var pathId = child.Get("m_PathID").GetValue().AsInt64();
 
                             var assetId = currentInst.ConvertToAssetID(fileId, pathId);
+                            if (assetId == null) continue;
                             if (visited.Contains(assetId)) continue;
                             visited.Add(assetId);
 
