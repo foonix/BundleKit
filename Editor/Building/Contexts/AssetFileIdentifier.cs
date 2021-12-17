@@ -27,6 +27,9 @@ namespace BundleKit.Building
 
         public string GenerateInternalFileName(string name)
         {
+            if (name == "resources.assets")
+                return "resources.assets";
+
             return "CAB-" + HashingMethods.Calculate<MD4>(name);
         }
         public long SerializationIndexFromObjectIdentifier(ObjectIdentifier objectID)
