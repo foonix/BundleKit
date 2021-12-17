@@ -17,7 +17,6 @@ namespace BundleKit.Utility
             var bundleReplacers = new List<BundleReplacer>();
             foreach (var build in builds)
             {
-                assetsReplacers.Clear();
                 bundleReplacers.Clear();
                 //Load AssetBundle using AssetTools.Net
                 //Modify AssetBundles by removing assets named (Asset Reference) and all their dependencies.
@@ -37,6 +36,8 @@ namespace BundleKit.Utility
                     // Additionally update bundle dependencies to include Resources.assets as a dependency
                     for (int i = 0; i < fileCount; i++)
                     {
+                        assetsReplacers.Clear();
+
                         var assetsFile = am.LoadAssetsFileFromBundle(bun, i, true);
                         if (assetsFile == null) continue; // This will occur if the index of this file is for a resS file which we don't need to process here.
 
@@ -47,8 +48,8 @@ namespace BundleKit.Utility
                         {
                             var assetBundleAsset = bundleAssets[0];
                             UpdateAssetBundleDependencies(assetsReplacers, am, assetsFile, assetBundleAsset);
-                        }
 
+                        }
                         RemapExternalReferences(assetsReplacers, am, assetsFile, remapContext);
 
                         assetsReplacers = assetsReplacers.OrderBy(repl => repl.GetPathID()).ToList();
@@ -59,8 +60,9 @@ namespace BundleKit.Utility
                             assetsFile.file.Write(writer, 0, assetsReplacers);
                             newAssetData = bundleStream.ToArray();
                         }
-                        var bundleReplacer = new BundleReplacerFromMemory(assetsFile.name, assetsFile.name, true, newAssetData, i);
+                        var bundleReplacer = new BundleReplacerFromMemory(assetsFile.name, assetsFile.name, false, newAssetData, -1);
                         bundleReplacers.Add(bundleReplacer);
+
                     }
 
                     #region Update preload table before updating anything else
