@@ -34,7 +34,7 @@ namespace BundleKit.Utility
 
                     // Remove all (Asset Reference)s from bundles, then update all references to those assets with references to the original assets file.
                     // Additionally update bundle dependencies to include Resources.assets as a dependency
-                    for (int i = 0; i < fileCount; i++)
+                    for (int i = fileCount - 1; i > -1; i--)
                     {
                         assetsReplacers.Clear();
 
@@ -50,7 +50,7 @@ namespace BundleKit.Utility
                             UpdateAssetBundleDependencies(assetsReplacers, am, assetsFile, assetBundleAsset);
 
                         }
-                        RemapExternalReferences(assetsReplacers, am, assetsFile, remapContext);
+                        RemapExternalReferences(assetsReplacers, am, assetsFile, remapContext, i);
 
                         assetsReplacers = assetsReplacers.OrderBy(repl => repl.GetPathID()).ToList();
                         byte[] newAssetData;
@@ -148,14 +148,14 @@ namespace BundleKit.Utility
             assetsReplacers.Add(new AssetsReplacerFromMemory(0, assetBundleInfo.index, (int)assetBundleInfo.curFileType, 0xFFFF, newAssetBundleBytes));
         }
 
-        public static void RemapExternalReferences(List<AssetsReplacer> assetsReplacers, AssetsManager am, AssetsFileInstance assetsFileInst, RemapContext remapContext)
+        public static void RemapExternalReferences(List<AssetsReplacer> assetsReplacers, AssetsManager am, AssetsFileInstance assetsFileInst, RemapContext remapContext, int fileIndex)
         {
-            var dependencies = assetsFileInst.file.dependencies.dependencies;
+            var dependencies = assetsFileInst.file.dependencies.dependencyCount;
 
             var remap = remapContext.AssetMaps
-                .Where(map => map.name.Equals(assetsFileInst.name))
-                .ToDictionary(map => (map.BundlePointer.fileId, map.BundlePointer.pathId),
-                              map => (fileId: dependencies.Count, map.ResourcePointer.pathId));
+                //.Where(map => map.name.Equals(assetsFileInst.name))
+                .ToDictionary(map => (map.BundlePointer.fileId + fileIndex, map.BundlePointer.pathId),
+                              map => (fileId: dependencies, map.ResourcePointer.pathId));
 
             var dependencyPaths = new HashSet<string>();
 

@@ -153,35 +153,35 @@ namespace BundleKit.Building
                         Directory.CreateDirectory(outputFolder);
 
                         sceneInfo = ContentBuildInterface.PrepareScene(scenePath, settings, usageTags, m_DependencyData.DependencyUsageCache, outputFolder);
-                        int notFoundId = int.MinValue;
-                        var lookup = m_AssetsReference.References.ToDictionary(assetReference =>
-                        {
-                            var retrieved = AssetDatabase.TryGetGUIDAndLocalFileIdentifier(assetReference.GetInstanceID(), out string guid, out long localId);
-                            if (retrieved)
-                            {
-                                var path = AssetDatabase.GetAssetPath(assetReference);
-                                return (guid, localId);
-                            }
+                        //int notFoundId = int.MinValue;
+                        //var lookup = m_AssetsReference.References.ToDictionary(assetReference =>
+                        //{
+                        //    var retrieved = AssetDatabase.TryGetGUIDAndLocalFileIdentifier(assetReference.GetInstanceID(), out string guid, out long localId);
+                        //    if (retrieved)
+                        //    {
+                        //        var path = AssetDatabase.GetAssetPath(assetReference);
+                        //        return (guid, localId);
+                        //    }
 
-                            return ($"NotFound({notFoundId})", notFoundId);
-                        });
+                        //    return ($"NotFound({notFoundId})", notFoundId);
+                        //});
 
-                        var referencedObjects = sceneInfo.referencedObjects
-                            .Where(obj =>
-                            {
-                                (string guid, long localId) key = (obj.guid.ToString(), obj.localIdentifierInFile);
-                                if (lookup.ContainsKey(key))
-                                {
-                                    var assetReference = lookup[key];
-                                    if (assetReference.name.Contains("(Custom Asset)"))
-                                        return true;
+                        //var referencedObjects = sceneInfo.referencedObjects
+                        //    .Where(obj =>
+                        //    {
+                        //        (string guid, long localId) key = (obj.guid.ToString(), obj.localIdentifierInFile);
+                        //        if (lookup.ContainsKey(key))
+                        //        {
+                        //            var assetReference = lookup[key];
+                        //            if (assetReference.name.Contains("(Custom Asset)"))
+                        //                return true;
 
-                                    return false;
-                                }
+                        //            return false;
+                        //        }
 
-                                return true;
-                            }).ToArray();
-                        sceneInfo.SetReferencedObjects(referencedObjects);
+                        //        return true;
+                        //    }).ToArray();
+                        //sceneInfo.SetReferencedObjects(referencedObjects);
 #endif
                         if (uncachedInfo != null)
                         {

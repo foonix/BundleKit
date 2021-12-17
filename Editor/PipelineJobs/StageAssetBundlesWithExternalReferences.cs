@@ -23,7 +23,10 @@ using UnityEngine;
 using static BundleKit.Utility.RemappingUtility;
 using CalculateAssetDependencyData = UnityEditor.Build.Pipeline.Tasks.CalculateAssetDependencyData;
 using CalculateSceneDependencyData = UnityEditor.Build.Pipeline.Tasks.CalculateSceneDependencyData;
-//using CalculateSceneDependencyData = BundleKit.Building.CalculateSceneDependencyData;
+using GenerateBundleCommands = UnityEditor.Build.Pipeline.Tasks.GenerateBundleCommands;
+using GenerateBundleMaps = UnityEditor.Build.Pipeline.Tasks.GenerateBundleMaps;
+using GenerateBundlePacking = UnityEditor.Build.Pipeline.Tasks.GenerateBundlePacking;
+using UpdateBundleObjectLayout = UnityEditor.Build.Pipeline.Tasks.UpdateBundleObjectLayout;
 
 namespace BundleKit.PipelineJobs
 {
@@ -117,10 +120,10 @@ namespace BundleKit.PipelineJobs
 
             // Packing
             buildTasks.Add(new Building.GenerateBundlePacking());
-            buildTasks.Add(new Building.UpdateBundleObjectLayout());
+            buildTasks.Add(new UpdateBundleObjectLayout());
             buildTasks.Add(new Building.GenerateBundleCommands());
             buildTasks.Add(new GenerateSubAssetPathMaps());
-            buildTasks.Add(new Building.GenerateBundleMaps());
+            buildTasks.Add(new GenerateBundleMaps());
             buildTasks.Add(new PostPackingCallback());
 
             //// Writing
@@ -175,11 +178,11 @@ namespace BundleKit.PipelineJobs
             pipeline.ManifestIndex = -1;
         }
 
-        private static AssetBundleBuild[] GetAssetBundleBuilds(AssetBundleDefinitions[] assetBundleDefs, List<string> explicitAssetPaths)
+        private AssetBundleBuild[] GetAssetBundleBuilds(AssetBundleDefinitions[] assetBundleDefs, List<string> explicitAssetPaths)
         {
             var ignoredExtensions = new[] { ".dll", ".cs" };
             var logBuilder = new StringBuilder();
-            var builds = new AssetBundleBuild[assetBundleDefs.Sum(abd => abd.assetBundles.Length)];
+            var builds = new AssetBundleBuild[assetBundleDefs.Sum(abd => abd.assetBundles.Length) + 1];
             logBuilder.AppendLine($"Defining {builds.Length} AssetBundleBuilds");
 
             var buildsIndex = 0;
@@ -238,6 +241,20 @@ namespace BundleKit.PipelineJobs
                     logBuilder.AppendLine();
                 }
             }
+
+            logBuilder.AppendLine("--------------------------------------------------");
+            logBuilder.AppendLine($"Defining bundle: resources.assets");
+            logBuilder.AppendLine();
+            var mainAssetPath = AssetDatabase.GetAssetPath(AssetsReferenceBundle);
+            builds[builds.Length - 1] = new AssetBundleBuild()
+            {
+                assetBundleName = "resources.assets",
+                assetNames = new[] { mainAssetPath }
+            };
+            foreach (var asset in builds[builds.Length - 1].assetNames)
+                logBuilder.AppendLine(asset);
+            logBuilder.AppendLine("--------------------------------------------------");
+            logBuilder.AppendLine();
 
             Debug.Log(logBuilder.ToString());
 

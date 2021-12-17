@@ -3,7 +3,6 @@ using BundleKit.Bundles;
 using BundleKit.Utility;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using UnityEditor;
 using UnityEditor.Build.Content;
 using UnityEditor.Build.Pipeline;
@@ -31,21 +30,25 @@ namespace BundleKit.Building
 
         [InjectContext(ContextUsage.In, true)]
         private IAssetsReference m_AssetsReference;
-#pragma warning restore 649 
+#pragma warning restore 649
 #pragma warning disable IDE0044
 
-        public int Version => 1;
+        /// <inheritdoc />
+        public int Version { get { return 3; } }
 
         public ReturnCode Run()
         {
-            Dictionary<string, WriteCommand> dictionary;
-            Dictionary<string, HashSet<ObjectIdentifier>> dictionary2;
-            Dictionary<string, HashSet<string>> dictionary3;
-            Dictionary<string, HashSet<GUID>> dictionary4;
+            Dictionary<string, WriteCommand> fileToCommand;
+            var forwardObjectDependencies = new Dictionary<string, HashSet<ObjectIdentifier>>();
+            var forwardFileDependencies = new Dictionary<string, HashSet<string>>();
+            var reverseAssetDependencies = new Dictionary<string, HashSet<GUID>>();
+
+            // BuildReferenceMap details what objects exist in other bundles that objects in a source bundle depend upon (forward dependencies)
+            // BuildUsageTagSet details the conditional data needed to be written by objects in a source bundle that is in used by objects in other bundles (reverse dependencies)
             using (m_Log.ScopedStep(LogLevel.Info, "Temporary Map Creations"))
             {
-                dictionary = m_WriteData.WriteOperations.ToDictionary((IWriteOperation x) => x.Command.internalName, (IWriteOperation x) => x.Command);
-                foreach (var kvp in dictionary)
+                fileToCommand = m_WriteData.WriteOperations.ToDictionary((x) => x.Command.internalName, (x) => x.Command);
+                foreach (var kvp in fileToCommand)
                 {
                     var name = kvp.Key;
                     var command = kvp.Value;
@@ -70,84 +73,98 @@ namespace BundleKit.Building
                         }
                     }
                 }
-                dictionary2 = new Dictionary<string, HashSet<ObjectIdentifier>>();
-                dictionary3 = new Dictionary<string, HashSet<string>>();
-                dictionary4 = new Dictionary<string, HashSet<GUID>>();
-                foreach (KeyValuePair<GUID, List<string>> assetToFile in m_WriteData.AssetToFiles)
+
+                foreach (var assetToFile in m_WriteData.AssetToFiles)
                 {
-                    GUID key = assetToFile.Key;
-                    List<string> value = assetToFile.Value;
-                    dictionary2.GetOrAdd(value[0], out HashSet<ObjectIdentifier> value2);
-                    dictionary3.GetOrAdd(value[0], out HashSet<string> value3);
-                    if (m_DependencyData.AssetInfo.TryGetValue(key, out AssetLoadInfo value4))
+                    var asset = assetToFile.Key;
+                    var files = assetToFile.Value;
+
+                    // The includes for an asset live in the first file, references could live in any file
+                    forwardObjectDependencies.GetOrAdd(files[0], out HashSet<ObjectIdentifier> objectDependencies);
+                    forwardFileDependencies.GetOrAdd(files[0], out HashSet<string> fileDependencies);
+
+                    // Grab the list of object references for the asset or scene and add them to the forward dependencies hash set for this file (write command)
+                    if (m_DependencyData.AssetInfo.TryGetValue(asset, out var assetInfo))
+                        objectDependencies.UnionWith(assetInfo.referencedObjects);
+
+                    if (m_DependencyData.SceneInfo.TryGetValue(asset, out var sceneInfo))
                     {
-                        value2.UnionWith(value4.referencedObjects);
+                        if (sceneInfo.referencedObjects.Any(robj => robj.filePath.Equals("archive:/resources.assets")))
+                        {
+                            if (!files.Contains("resources.assets"))
+                                files.Add("resources.assets");
+
+                            if (!fileDependencies.Contains("resources.assets"))
+                                fileDependencies.Add("resources.assets");
+                        }
+                        objectDependencies.UnionWith(sceneInfo.referencedObjects);
+
                     }
 
-                    if (m_DependencyData.SceneInfo.TryGetValue(key, out SceneDependencyInfo value5))
+                    // Grab the list of file references for the asset or scene and add them to the forward dependencies hash set for this file (write command)
+                    // While doing so, also add the asset to the reverse dependencies hash set for all the other files it depends upon.
+                    // We already ensure BuildReferenceMap & BuildUsageTagSet contain the objects in this write command in GenerateBundleCommands. So skip over the first file (self)
+                    for (int i = 1; i < files.Count; i++)
                     {
-                        value2.UnionWith(value5.referencedObjects);
-                    }
-
-                    for (int i = 1; i < value.Count; i++)
-                    {
-                        value3.Add(value[i]);
-                        dictionary4.GetOrAdd(value[i], out HashSet<GUID> value6);
-                        value6.Add(key);
+                        fileDependencies.Add(files[i]);
+                        reverseAssetDependencies.GetOrAdd(files[i], out HashSet<GUID> reverseDependencies);
+                        reverseDependencies.Add(asset);
                     }
                 }
             }
 
+            // Using the previously generated forward dependency maps, update the BuildReferenceMap per WriteCommand to contain just the references that we care about
             using (m_Log.ScopedStep(LogLevel.Info, "Populate BuildReferenceMaps"))
             {
                 foreach (IWriteOperation writeOperation in m_WriteData.WriteOperations)
                 {
-                    string internalName = writeOperation.Command.internalName;
-                    BuildReferenceMap buildReferenceMap = m_WriteData.FileToReferenceMap[internalName];
-                    if (!dictionary2.TryGetValue(internalName, out HashSet<ObjectIdentifier> value7) || !dictionary3.TryGetValue(internalName, out HashSet<string> value8))
-                    {
-                        continue;
-                    }
+                    var internalName = writeOperation.Command.internalName;
+                    var buildReferenceMap = m_WriteData.FileToReferenceMap[internalName];
 
-                    foreach (string item in value8)
+                    if (!forwardObjectDependencies.TryGetValue(internalName, out var objectDependencies)) continue; // this bundle has no external dependencies
+                    if (!forwardFileDependencies.TryGetValue(internalName, out var fileDependencies)) continue; // this bundle has no external dependencies
+
+                    foreach (string file in fileDependencies)
                     {
-                        WriteCommand writeCommand = dictionary[item];
+                        WriteCommand writeCommand = fileToCommand[file];
                         foreach (SerializationInfo serializeObject in writeCommand.serializeObjects)
                         {
-                            if (value7.Contains(serializeObject.serializationObject))
-                            {
-                                buildReferenceMap.AddMapping(item, serializeObject.serializationIndex, serializeObject.serializationObject);
-                            }
+                            // Only add objects we are referencing. This ensures that new/removed objects to files we depend upon will not cause a rebuild
+                            // of this file, unless are referencing the new/removed objects.
+                            if (!objectDependencies.Contains(serializeObject.serializationObject)) continue;
+
+                            buildReferenceMap.AddMapping(file, serializeObject.serializationIndex, serializeObject.serializationObject);
                         }
                     }
                 }
             }
 
+            // Using the previously generate reverse dependency map, create the BuildUsageTagSet per WriteCommand to contain just the data that we care about
             using (m_Log.ScopedStep(LogLevel.Info, "Populate BuildUsageTagSet"))
             {
                 foreach (IWriteOperation writeOperation2 in m_WriteData.WriteOperations)
                 {
-                    string internalName2 = writeOperation2.Command.internalName;
-                    BuildUsageTagSet buildUsageTagSet = m_WriteData.FileToUsageSet[internalName2];
-                    if (dictionary4.TryGetValue(internalName2, out HashSet<GUID> value9))
+                    var internalName = writeOperation2.Command.internalName;
+                    BuildUsageTagSet buildUsageTagSet = m_WriteData.FileToUsageSet[internalName];
+                    if (reverseAssetDependencies.TryGetValue(internalName, out var assetDependencies))
                     {
-                        foreach (GUID item2 in value9)
+                        foreach (GUID item2 in assetDependencies)
                         {
-                            if (m_DependencyData.AssetUsage.TryGetValue(item2, out BuildUsageTagSet value10))
+                            if (m_DependencyData.AssetUsage.TryGetValue(item2, out var assetUsage))
                             {
-                                buildUsageTagSet.UnionWith(value10);
+                                buildUsageTagSet.UnionWith(assetUsage);
                             }
 
-                            if (m_DependencyData.SceneUsage.TryGetValue(item2, out BuildUsageTagSet value11))
+                            if (m_DependencyData.SceneUsage.TryGetValue(item2, out var sceneUsage))
                             {
-                                buildUsageTagSet.UnionWith(value11);
+                                buildUsageTagSet.UnionWith(sceneUsage);
                             }
                         }
                     }
 
                     if (ReflectionExtensions.SupportsFilterToSubset)
                     {
-                        buildUsageTagSet.FilterToSubset(m_WriteData.FileToObjects[internalName2].ToArray());
+                        buildUsageTagSet.FilterToSubset(m_WriteData.FileToObjects[internalName].ToArray());
                     }
                 }
             }

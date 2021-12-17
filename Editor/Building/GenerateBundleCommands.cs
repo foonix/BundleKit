@@ -1,3 +1,4 @@
+using BundleKit.Building;
 using BundleKit.Utility;
 using System.Collections.Generic;
 using System.IO;
@@ -12,9 +13,10 @@ using UnityEditor.Build.Pipeline.Utilities;
 using UnityEditor.Build.Pipeline.WriteTypes;
 using UnityEditor.Build.Utilities;
 using UnityEngine;
-
 namespace BundleKit.Building
 {
+    using ValidationMethods = ValidationMethodsWrapper;
+
     /// <summary>
     /// Creates bundle commands for assets and scenes.
     /// </summary>
@@ -48,7 +50,7 @@ namespace BundleKit.Building
         static bool ValidAssetBundle(List<GUID> assets, HashSet<GUID> customAssets)
         {
             // Custom Valid Asset Bundle function that tests if every asset is known by the asset database, is an asset (not a scene), or is a user driven custom asset
-            return assets.All(x => ValidationMethodsWrapper.ValidAsset(x) == ValidationMethodsWrapper.Status.Asset || customAssets.Contains(x));
+            return assets.All(x => ValidationMethods.ValidAsset(x) == ValidationMethods.Status.Asset || customAssets.Contains(x));
         }
 
         /// <inheritdoc />
@@ -65,16 +67,16 @@ namespace BundleKit.Building
 
             foreach (var bundlePair in m_BuildContent.BundleLayout)
             {
-                var bundleName = bundlePair.Key;
                 if (ValidAssetBundle(bundlePair.Value, customAssets))
                 {
                     // Use generated internalName here as we could have an empty asset bundle used for raw object storage (See CreateStandardShadersBundle)
-                    var internalName = m_PackingMethod.GenerateInternalFileName(bundleName);
+                    var internalName = m_PackingMethod.GenerateInternalFileName(bundlePair.Key);
                     if (internalName.StartsWith("CAB-", System.StringComparison.InvariantCultureIgnoreCase))
                         internalName = string.Format(CommonStrings.AssetBundleNameFormat, internalName);
+
                     CreateAssetBundleCommand(bundlePair.Key, internalName, bundlePair.Value);
                 }
-                else if (ValidationMethodsWrapper.ValidSceneBundle(bundlePair.Value))
+                else if (ValidationMethods.ValidSceneBundle(bundlePair.Value))
                 {
                     var firstScene = bundlePair.Value[0];
                     CreateSceneBundleCommand(bundlePair.Key, assetToMainFile[firstScene], firstScene, bundlePair.Value, assetToMainFile);
@@ -107,14 +109,14 @@ namespace BundleKit.Building
                 if (consumedIds.TryGetValue(serializationInfo.serializationIndex, out var priorObject))
                 {
                     string msg = string.Format(@"File '{0}' contains a file identifier collision between {1} ({2}) and {3} ({4}) at id {5}. Objects will be missing from the bundle!
-You can work around this issue by changing the 'FileID Generator Seed' found in the Scriptable Build Pipeline Preferences window.", 
+You can work around this issue by changing the 'FileID Generator Seed' found in the Scriptable Build Pipeline Preferences window.",
                         internalName, obj, BuildCacheUtility.GetMainTypeForObject(obj), priorObject, BuildCacheUtility.GetMainTypeForObject(priorObject), serializationInfo.serializationIndex);
                     throw new BuildFailedException(msg);
                 }
                 consumedIds.Add(serializationInfo.serializationIndex, obj);
                 command.serializeObjects.Add(serializationInfo);
             }
-                
+
             return command;
         }
 

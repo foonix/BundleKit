@@ -12,6 +12,7 @@ using UnityEditor.Build.Utilities;
 
 namespace BundleKit.Building
 {
+    using ValidationMethods = ValidationMethodsWrapper;
     /// <summary>
     /// Packs each asset bundle and calculates the asset load file dependency list.
     /// </summary>
@@ -42,7 +43,7 @@ namespace BundleKit.Building
         static bool ValidAssetBundle(List<GUID> assets, HashSet<GUID> customAssets)
         {
             // Custom Valid Asset Bundle function that tests if every asset is known by the asset database, is an asset (not a scene), or is a user driven custom asset
-            return assets.All(x => ValidationMethodsWrapper.ValidAsset(x) == ValidationMethodsWrapper.Status.Asset || customAssets.Contains(x));
+            return assets.All(x => ValidationMethods.ValidAsset(x) == ValidationMethods.Status.Asset || customAssets.Contains(x));
         }
 
         /// <inheritdoc />
@@ -60,7 +61,7 @@ namespace BundleKit.Building
             {
                 if (ValidAssetBundle(bundle.Value, customAssets))
                     PackAssetBundle(bundle.Key, bundle.Value, assetToReferences);
-                else if (ValidationMethodsWrapper.ValidSceneBundle(bundle.Value))
+                else if (ValidationMethods.ValidSceneBundle(bundle.Value))
                     PackSceneBundle(bundle.Key, bundle.Value, assetToReferences);
             }
 

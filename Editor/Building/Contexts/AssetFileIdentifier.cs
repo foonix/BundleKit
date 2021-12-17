@@ -11,6 +11,7 @@ namespace BundleKit.Building
     public class AssetFileIdentifier : IDeterministicIdentifiers
     {
         private Dictionary<long, long> indexMap;
+        public AssetsReferenceBundle AssetsReferenceBundle { get; }
 
         public AssetFileIdentifier(AssetsReferenceBundle assetsReferenceBundle)
         {
@@ -23,7 +24,9 @@ namespace BundleKit.Building
                 AssetDatabase.TryGetGUIDAndLocalFileIdentifier(obj, out string _, out long pathId);
                 indexMap[pathId] = assetMap.ResourcePointer.pathId;
             }
+            AssetsReferenceBundle = assetsReferenceBundle;
         }
+
 
         public string GenerateInternalFileName(string name)
         {
@@ -34,11 +37,13 @@ namespace BundleKit.Building
         }
         public long SerializationIndexFromObjectIdentifier(ObjectIdentifier objectID)
         {
+            AssetDatabase.TryGetGUIDAndLocalFileIdentifier(AssetsReferenceBundle, out string arbGuid, out long arbLocalId);
             var path = AssetDatabase.GUIDToAssetPath(objectID.guid.ToString());
-            var asset = AssetDatabase.LoadMainAssetAtPath(path);
-            if (objectID.guid == default || asset is AssetsReferenceBundle)
+            var mainAsset = AssetDatabase.LoadMainAssetAtPath(path);
+            if (arbGuid == objectID.guid.ToString() || objectID.guid == default || mainAsset is AssetsReferenceBundle)
             {
-                if (asset is AssetsReferenceBundle arb)
+                var reps = AssetDatabase.LoadAllAssetRepresentationsAtPath(path);
+                if (indexMap.ContainsKey(objectID.localIdentifierInFile))
                 {
                     long localId = indexMap[objectID.localIdentifierInFile];
                     return localId;
