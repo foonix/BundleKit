@@ -1,10 +1,6 @@
-﻿using AssetsTools.NET.Extra;
-using System.IO;
-using System.Linq;
-using UnityEditor;
+﻿using UnityEditor;
 using UnityEditor.Experimental.AssetImporters;
 using UnityEngine;
-using Exception = System.Exception;
 
 namespace BundleKit.Bundles
 {

@@ -1,6 +1,4 @@
-﻿using UnityEngine;
-
-namespace BundleKit.Assets
+﻿namespace BundleKit.Assets
 {
     [System.Serializable]
     public struct MaterialDefinition

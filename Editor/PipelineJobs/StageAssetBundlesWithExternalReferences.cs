@@ -1,5 +1,4 @@
 ﻿using BundleKit.Building;
-using BundleKit.Building.Contexts;
 using BundleKit.Bundles;
 using BundleKit.Utility;
 using System;
@@ -20,12 +19,9 @@ using UnityEditor.Build.Pipeline.Interfaces;
 using UnityEditor.Build.Pipeline.Tasks;
 using UnityEditor.Compilation;
 using UnityEngine;
-using static BundleKit.Utility.RemappingUtility;
 using CalculateAssetDependencyData = UnityEditor.Build.Pipeline.Tasks.CalculateAssetDependencyData;
 using CalculateSceneDependencyData = UnityEditor.Build.Pipeline.Tasks.CalculateSceneDependencyData;
-using GenerateBundleCommands = UnityEditor.Build.Pipeline.Tasks.GenerateBundleCommands;
 using GenerateBundleMaps = UnityEditor.Build.Pipeline.Tasks.GenerateBundleMaps;
-using GenerateBundlePacking = UnityEditor.Build.Pipeline.Tasks.GenerateBundlePacking;
 using UpdateBundleObjectLayout = UnityEditor.Build.Pipeline.Tasks.UpdateBundleObjectLayout;
 
 namespace BundleKit.PipelineJobs
@@ -38,7 +34,6 @@ namespace BundleKit.PipelineJobs
         public BuildTarget buildTarget = BuildTarget.StandaloneWindows;
         public BuildTargetGroup buildTargetGroup = BuildTargetGroup.Standalone;
         public Compression compression = Compression.Uncompressed;
-        public bool remapAssetsReferences;
         public AssetsReferenceBundle AssetsReferenceBundle;
         public bool simulate;
 
@@ -82,18 +77,12 @@ namespace BundleKit.PipelineJobs
 
             var content = new BundleBuildContent(builds);
 
-            var remapContext = new RemapContext();
             var context = new List<IContextObject>();
-            var returnCode = ContentPipeline.BuildAssetBundles(parameters, content, out var result, BuildTaskList(), remapContext, new AssetFileIdentifier(AssetsReferenceBundle), AssetsReferenceBundle);
+            var returnCode = ContentPipeline.BuildAssetBundles(parameters, content, out var result, BuildTaskList(), new AssetFileIdentifier(AssetsReferenceBundle), AssetsReferenceBundle);
 
             if (returnCode < 0)
             {
                 throw new Exception($"AssetBundle Build Incomplete: {returnCode}");
-            }
-
-            if (remapAssetsReferences)
-            {
-                RemapBundle(bundleArtifactPath, builds, remapContext, compression);
             }
 
             CopyModifiedAssetBundles(bundleArtifactPath, pipeline);

@@ -10,7 +10,6 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using ThunderKit.Common.Logging;
 using ThunderKit.Core.Data;
-using ThunderKit.Core.Paths;
 using ThunderKit.Core.Pipelines;
 using UnityEditor;
 

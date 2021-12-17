@@ -11,7 +11,7 @@ using UnityEngine;
 namespace BundleKit.Editors
 {
     [CustomEditor(typeof(Material))]
-    public class BundleEndabledMaterialEditor : MaterialEditor
+    public class BundleEnabledMaterialEditor : MaterialEditor
     {
         protected override void OnHeaderGUI()
         {

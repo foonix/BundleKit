@@ -1,13 +1,11 @@
 ﻿using AssetsTools.NET;
 using AssetsTools.NET.Extra;
-using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using ThunderKit.Core.Pipelines;
 using UnityEditor;
-using BundleKit.Assets;
 
 namespace BundleKit.PipelineJobs
 {
