@@ -5,14 +5,46 @@ using BundleKit.Building;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using UnityEditor.Build.Content;
 using UnityEditor.Build.Pipeline.Interfaces;
 using UnityEditor.Build.Pipeline.Utilities;
 
 namespace BundleKit.Utility
 {
+    internal static class TrackerExtensions
+    {
+        public static string HumanReadable(this string camelCased)
+        {
+            return Regex.Replace(camelCased, "(\\B[A-Z]+?(?=[A-Z][^A-Z])|\\B[A-Z]+?(?=[^A-Z]))", " $1");
+        }
+
+        public static bool UpdateTaskUnchecked(this IProgressTracker tracker, string taskTitle)
+        {
+            return tracker?.UpdateTask(taskTitle) ?? true;
+        }
+
+        public static bool UpdateInfoUnchecked(this IProgressTracker tracker, string taskInfo)
+        {
+            return tracker?.UpdateInfo(taskInfo) ?? true;
+        }
+    }
     public static class Extensions
     {
+        public static UnityEngine.BuildCompression AsBuildCompression(this Compression compression)
+        {
+            switch (compression)
+            {
+                case Compression.Uncompressed:
+                    return UnityEngine.BuildCompression.Uncompressed;
+                case Compression.LZMA:
+                    return UnityEngine.BuildCompression.LZMA;
+                case Compression.LZ4:
+                    return UnityEngine.BuildCompression.LZ4;
+            }
+
+            throw new NotSupportedException();
+        }
         public static bool IsNullOrEmpty<T>(this ICollection<T> collection)
         {
             return collection == null || collection.Count == 0;
@@ -268,7 +300,7 @@ namespace BundleKit.Utility
                 }
             }
 
-            dependencies.UnionWith(uniqueTypes.Select(cache.GetCacheEntry));
+            dependencies.UnionWith(uniqueTypes.Where(t => t != null).Select(cache.GetCacheEntry));
         }
 
 

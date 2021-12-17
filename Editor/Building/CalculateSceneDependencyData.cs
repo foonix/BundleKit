@@ -9,6 +9,7 @@ using BundleKit.Utility;
 using UnityEditor;
 using UnityEditor.Build.Pipeline;
 using static BundleKit.Utility.Extensions;
+using BundleKit.Bundles;
 
 #if !UNITY_2019_3_OR_NEWER
 using System.IO;
@@ -30,6 +31,9 @@ namespace BundleKit.Building
 
         [InjectContext(ContextUsage.In)]
         IBuildContent m_Content;
+
+        [InjectContext(ContextUsage.In)]
+        IAssetsReference m_AssetsReference;
 
         [InjectContext]
         IDependencyData m_DependencyData;
@@ -149,7 +153,35 @@ namespace BundleKit.Building
                         Directory.CreateDirectory(outputFolder);
 
                         sceneInfo = ContentBuildInterface.PrepareScene(scenePath, settings, usageTags, m_DependencyData.DependencyUsageCache, outputFolder);
-                        sceneInfo.SetReferencedObjects(sceneInfo.referencedObjects.Where(oid => oid.guid != default).ToArray());
+                        int notFoundId = int.MinValue;
+                        var lookup = m_AssetsReference.References.ToDictionary(assetReference =>
+                        {
+                            var retrieved = AssetDatabase.TryGetGUIDAndLocalFileIdentifier(assetReference.GetInstanceID(), out string guid, out long localId);
+                            if (retrieved)
+                            {
+                                var path = AssetDatabase.GetAssetPath(assetReference);
+                                return (guid, localId);
+                            }
+
+                            return ($"NotFound({notFoundId})", notFoundId);
+                        });
+
+                        var referencedObjects = sceneInfo.referencedObjects
+                            .Where(obj =>
+                            {
+                                (string guid, long localId) key = (obj.guid.ToString(), obj.localIdentifierInFile);
+                                if (lookup.ContainsKey(key))
+                                {
+                                    var assetReference = lookup[key];
+                                    if (assetReference.name.Contains("(Custom Asset)"))
+                                        return true;
+
+                                    return false;
+                                }
+
+                                return true;
+                            }).ToArray();
+                        sceneInfo.SetReferencedObjects(referencedObjects);
 #endif
                         if (uncachedInfo != null)
                         {

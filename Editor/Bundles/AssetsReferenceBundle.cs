@@ -1,15 +1,19 @@
 ﻿using BundleKit.Assets;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.Build.Pipeline.Interfaces;
 using UnityEngine;
 
 namespace BundleKit.Bundles
 {
-    public class AssetsReferenceBundle : ScriptableObject
+    public class AssetsReferenceBundle : ScriptableObject, IAssetsReference
     {
         public Material[] CustomMaterials;
         public Object[] Assets;
         public MappingData mappingData;
+
+        public Object[] References => Assets;
+        public MappingData MappingData => mappingData;
 
         [InitializeOnLoadMethod]
         static void ReloadAssetsReferenceBundles()
@@ -34,5 +38,11 @@ namespace BundleKit.Bundles
                 bundle = AssetBundle.LoadFromFile(path);
             hideFlags = HideFlags.None;
         }
+    }
+
+    internal interface IAssetsReference : IContextObject
+    {
+        Object[] References { get; }
+        MappingData MappingData { get; }
     }
 }

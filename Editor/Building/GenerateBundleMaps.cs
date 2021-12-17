@@ -15,6 +15,8 @@ namespace BundleKit.Building
 {
     public class GenerateBundleMaps : IBuildTask
     {
+#pragma warning disable IDE0044
+#pragma warning disable 649
         [InjectContext(ContextUsage.In, false)]
         private IDependencyData m_DependencyData;
 
@@ -24,17 +26,15 @@ namespace BundleKit.Building
         [InjectContext(ContextUsage.In, true)]
         private IBuildLogger m_Log;
 
-        [InjectContext(ContextUsage.InOut, false)]
+        [InjectContext(ContextUsage.InOut, true)]
         private IAssetMapsContext m_AssetMapData;
 
+        [InjectContext(ContextUsage.In, true)]
+        private IAssetsReference m_AssetsReference;
+#pragma warning restore 649 
+#pragma warning disable IDE0044
+
         public int Version => 1;
-
-        public AssetsReferenceBundle AssetsReferenceBundle { get; }
-
-        public GenerateBundleMaps(AssetsReferenceBundle arb)
-        {
-            AssetsReferenceBundle = arb;
-        }
 
         public ReturnCode Run()
         {
@@ -44,7 +44,6 @@ namespace BundleKit.Building
             Dictionary<string, HashSet<GUID>> dictionary4;
             using (m_Log.ScopedStep(LogLevel.Info, "Temporary Map Creations"))
             {
-                var info = new StringBuilder();
                 dictionary = m_WriteData.WriteOperations.ToDictionary((IWriteOperation x) => x.Command.internalName, (IWriteOperation x) => x.Command);
                 foreach (var kvp in dictionary)
                 {
@@ -52,15 +51,15 @@ namespace BundleKit.Building
                     var command = kvp.Value;
                     var fileName = command.fileName;
                     var internalName = command.internalName;
-                    info.AppendLine(name).AppendLine(fileName).AppendLine(internalName).AppendLine($"{command.serializeObjects.Count}");
                     for (int i = 0; i < command.serializeObjects.Count; i++)
                     {
                         var serializedObj = command.serializeObjects[i];
                         var newId = serializedObj.serializationIndex;
                         var oldId = serializedObj.serializationObject.localIdentifierInFile;
-                        if (serializedObj.serializationObject.guid == default)
+                        var filePath = serializedObj.serializationObject.filePath;
+                        if (filePath == "archive:/resources.assets" && m_AssetMapData != null && m_AssetsReference != null)
                         {
-                            var map = AssetsReferenceBundle.mappingData.AssetMaps.FirstOrDefault(m => m.BundlePointer.pathId == oldId);
+                            var map = m_AssetsReference.MappingData.AssetMaps.FirstOrDefault(m => m.BundlePointer.pathId == oldId);
                             if (map != default)
                                 m_AssetMapData.AssetMaps.Add(new Assets.AssetMap
                                 {
@@ -69,12 +68,8 @@ namespace BundleKit.Building
                                     ResourcePointer = map.ResourcePointer
                                 });
                         }
-
-                        info.AppendLine($"{newId} <=> {oldId}");
                     }
-                    info.AppendLine();
                 }
-                var result = info.ToString();
                 dictionary2 = new Dictionary<string, HashSet<ObjectIdentifier>>();
                 dictionary3 = new Dictionary<string, HashSet<string>>();
                 dictionary4 = new Dictionary<string, HashSet<GUID>>();

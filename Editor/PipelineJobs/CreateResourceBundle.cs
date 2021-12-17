@@ -121,7 +121,7 @@ namespace BundleKit.PipelineJobs
                     var assetsFileName = $"CAB-{GUID.Generate()}";
                     bun.file.Write(writer, new List<BundleReplacer>
                     {
-                        new BundleReplacerFromMemory(bundleAssetsFile.name, assetsFileName, true, newAssetData, newAssetData.Length),
+                        new BundleReplacerFromMemory(bundleAssetsFile.name, "resources.assets", true, newAssetData, newAssetData.Length),
                     });
                 }
 
