@@ -42,7 +42,6 @@ namespace BundleKit.Bundles
         private void Awake()
         {
             if (Assets == null) return;
-            Initialize();
             LoadedIds = new long[Assets.Length];
             for (int i = 0; i < Assets.Length; i++)
             {
