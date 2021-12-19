@@ -1,5 +1,4 @@
-﻿using AssetsTools.NET.Extra;
-using System.Linq;
+﻿using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -11,7 +10,6 @@ namespace BundleKit.Bundles
         public Object[] Assets;
         public long[] LocalIds;
         public long[] LoadedIds;
-        public string archiveName;
         public Object[] References => Assets;
         AssetBundle bundle;
         [InitializeOnLoadMethod]
@@ -37,11 +35,7 @@ namespace BundleKit.Bundles
                 .FirstOrDefault(bnd => bnd.name.Contains(name));
             if (!bundle)
                 bundle = AssetBundle.LoadFromFile(path);
-            var am = new AssetsManager();
-            var bun = am.LoadBundleFile(path);
-            var bundleAssetsFile = am.LoadAssetsFileFromBundle(bun, 0);
-            archiveName = bundleAssetsFile.name;
-            am.UnloadAll();
+
             hideFlags = HideFlags.None;
         }
 
