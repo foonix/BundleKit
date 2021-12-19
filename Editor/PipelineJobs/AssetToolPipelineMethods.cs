@@ -7,22 +7,11 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using ThunderKit.Common.Logging;
-using ThunderKit.Core.Data;
-using UnityEditor;
 
 namespace BundleKit.PipelineJobs
 {
     public static class AssetToolPipelineMethods
     {
-        public static void InitializePaths(DefaultAsset bundle, string outputAssetBundlePath, out string resourcesFilePath, out string ggmPath, out string fileName, out string bundlePath, out string dataDirectoryPath)
-        {
-            var settings = ThunderKitSetting.GetOrCreateSettings<ThunderKitSettings>();
-            dataDirectoryPath = Path.Combine(settings.GamePath, $"{Path.GetFileNameWithoutExtension(settings.GameExecutable)}_Data");
-            resourcesFilePath = Path.Combine(dataDirectoryPath, "resources.assets");
-            ggmPath = Path.Combine(dataDirectoryPath, "globalgamemanagers");
-            fileName = Path.GetFileName(outputAssetBundlePath);
-            bundlePath = AssetDatabase.GetAssetPath(bundle);
-        }
         public static AssetsFileInstance InitializeAssetTools(this AssetsManager am, string assetsFilePath)
         {
             // Load assets files from Resources
@@ -79,7 +68,7 @@ namespace BundleKit.PipelineJobs
                     for (; i < nameRegex.Length; i++)
                         if (nameRegex[i] != null && nameRegex[i].IsMatch(name))
                             break;
-                    if (i == nameRegex.Length) continue;
+                    if (nameRegex.Length != 0 && i == nameRegex.Length) continue;
 
                     var ext = am.GetExtAsset(resourcesInst, 0, assetFileInfo.index);
                     //if (ext.file.name.Contains("unity_builtin_extra"))
