@@ -11,30 +11,38 @@ namespace BundleKit.Bundles
         public long[] LocalIds;
         public long[] LoadedIds;
         public Object[] References => Assets;
+
+        public AssetsReferenceBundle[] dependencies;
+
         AssetBundle bundle;
         [InitializeOnLoadMethod]
         static void ReloadAssetsReferenceBundles()
         {
             var arbs = AssetDatabase.FindAssets($"t:{nameof(AssetsReferenceBundle)}")
                 .Select(guid => AssetDatabase.GUIDToAssetPath(guid))
-                .Select(path => AssetDatabase.LoadAssetAtPath<AssetsReferenceBundle>(path));
-
-            foreach (var arb in arbs)
+                .Select(path => AssetDatabase.LoadAssetAtPath<AssetsReferenceBundle>(path))
+                .OrderBy(arb => arb.name)
+                .ToArray();
+            for (int i = 0; i < arbs.Length; i++)
             {
-                arb.Initialize();
-
+                var a = arbs[i];
             }
+            arbs.First().Initialize();
         }
 
-        private void Initialize()
+        private void Initialize(AssetBundle[] allBundles = null)
         {
             if (!EditorUtility.IsPersistent(this)) return;
             var path = AssetDatabase.GetAssetPath(this);
-            var allBundles = AssetBundle.GetAllLoadedAssetBundles().ToArray();
+            if (allBundles == null)
+                allBundles = AssetBundle.GetAllLoadedAssetBundles().ToArray();
             bundle = allBundles
                 .FirstOrDefault(bnd => bnd.name.Contains(name));
             if (!bundle)
                 bundle = AssetBundle.LoadFromFile(path);
+            var shaders = bundle.LoadAllAssets<Shader>();
+            foreach (var shader in shaders)
+                ShaderUtil.RegisterShader(shader);
 
             hideFlags = HideFlags.None;
         }

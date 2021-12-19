@@ -39,6 +39,7 @@ namespace BundleKit.Bundles
                     ctx.AddObjectToAsset(System.Guid.NewGuid().ToString("x"), asset);
                     ctx.SetMainObject(asset);
                 }
+                bundle.Unload(true);
             }
         }
     }

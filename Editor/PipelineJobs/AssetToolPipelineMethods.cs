@@ -12,19 +12,15 @@ namespace BundleKit.PipelineJobs
 {
     public static class AssetToolPipelineMethods
     {
-        public static AssetsFileInstance InitializeAssetTools(this AssetsManager am, string assetsFilePath)
+        public static AssetsFileInstance GetAssetsInst(this AssetsManager am, string assetsFilePath)
         {
             // Load assets files from Resources
-            var assetsFileInst = am.LoadAssetsFile(assetsFilePath, true);
+            var assetsFileInst = am.LoadAssetsFile(assetsFilePath, false);
 
-            //load data for classes
-            var classDataPath = Path.Combine("Packages", "com.passivepicasso.bundlekit", "Library", "classdata.tpk");
-            am.LoadClassPackage(classDataPath);
             am.LoadClassDatabaseFromPackage(assetsFileInst.file.typeTree.unityVersion);
 
             return assetsFileInst;
         }
-
         public static void PrepareNewBundle(this AssetsManager am, string path, out BundleFileInstance bun, out AssetsFileInstance bundleAssetsFile, out AssetExternal assetBundleExtAsset)
         {
             //Load bundle file and its AssetsFile
@@ -35,50 +31,41 @@ namespace BundleKit.PipelineJobs
             var assetBundleAsset = bundleAssetsFile.table.GetAssetsOfType((int)AssetClassID.AssetBundle)[0];
             assetBundleExtAsset = am.GetExtAsset(bundleAssetsFile, 0, assetBundleAsset.index);
         }
-
-        public static void InitializeContainers(string[] regexFilters, out List<AssetsReplacer> assetsReplacers, out List<string> contexts, out List<AssetTypeValueField> newContainerChildren, out Regex[] nameRegex)
-        {
-            assetsReplacers = new List<AssetsReplacer>();
-            contexts = new List<string>();
-            newContainerChildren = new List<AssetTypeValueField>();
-            nameRegex = regexFilters.Select(filter => new Regex(filter)).ToArray();
-        }
-
-        public static IEnumerable<AssetData> CollectAssets(AssetsManager am, AssetsFileInstance resourcesInst, Regex[] nameRegex, AssetClassID[] classes, ProgressBar progressBar)
+        public static IEnumerable<AssetData> CollectAssets(AssetsManager am, AssetsFileInstance assetsFileInst, HashSet<AssetID> visited, Regex[] nameRegex, AssetClassID assetClass, ProgressBar progressBar)
         {
             // Iterate over all requested Class types and collect the data required to copy over the required asset information
             // This step will recurse over dependencies so all required assets will become available from the resulting bundle
             progressBar.Update(title: "Mapping PathIds to Resource Paths");
             progressBar.Update(title: "Collecting Assets");
-            var clss = new HashSet<uint>(classes.Select(cls => (uint)cls));
-            var visited = new HashSet<AssetID>();
             var targetAssets = Enumerable.Empty<AssetData>();
-            foreach (var cls in classes)
+            var fileInfos = assetsFileInst.table.GetAssetsOfType((int)assetClass);
+
+            for (var x = 0; x < fileInfos.Count; x++)
             {
-                var fileInfos = resourcesInst.table.GetAssetsOfType((int)cls);
-                for (var x = 0; x < fileInfos.Count; x++)
-                {
-                    var assetFileInfo = resourcesInst.table.assetFileInfo[x];
-                    var name = AssetHelper.GetAssetNameFast(resourcesInst.file, am.classFile, assetFileInfo);
-                    progressBar.Update($"[Loading] ({(AssetClassID)assetFileInfo.curFileType}) {name}", $"Collecting Assets ({x} / {fileInfos.Count})", progress: x / (float)fileInfos.Count);
-                    if (!clss.Contains(assetFileInfo.curFileType)) continue;
+                var assetFileInfo = fileInfos[x];
+                var name = AssetHelper.GetAssetNameFast(assetsFileInst.file, am.classFile, assetFileInfo);
+                progressBar.Update($"[Loading] ({(AssetClassID)assetFileInfo.curFileType}) {name}", $"Collecting Assets ({x} / {fileInfos.Count})", progress: x / (float)fileInfos.Count);
 
-                    // If a name Regex filter is applied, and it does not match, continue
-                    int i = 0;
-                    for (; i < nameRegex.Length; i++)
-                        if (nameRegex[i] != null && nameRegex[i].IsMatch(name))
-                            break;
-                    if (nameRegex.Length != 0 && i == nameRegex.Length) continue;
+                // If a name Regex filter is applied, and it does not match, continue
+                int i = 0;
+                for (; i < nameRegex.Length; i++)
+                    if (nameRegex[i] != null && nameRegex[i].IsMatch(name))
+                        break;
+                if (nameRegex.Length != 0 && i == nameRegex.Length) continue;
 
-                    var ext = am.GetExtAsset(resourcesInst, 0, assetFileInfo.index);
-                    //if (ext.file.name.Contains("unity_builtin_extra"))
-                    //    continue;
+                var assetId = assetsFileInst.ConvertToAssetID(0, assetFileInfo.index);
+                if (visited.Contains(assetId)) continue;
+                visited.Add(assetId);
 
-                    // Find name, path and fileId of each asset referenced directly and indirectly by assetFileInfo including itself
-                    targetAssets = targetAssets.Concat(resourcesInst.GetDependentAssetIds(visited, ext.instance.GetBaseField(), am, progressBar)
-                                               .Prepend((ext, name, resourcesInst.name, 0, assetFileInfo.index, 0)));
-                }
+                var ext = am.GetExtAsset(assetsFileInst, 0, assetFileInfo.index);
+                if (ext.file.name.Contains("unity_builtin_extra"))
+                    continue;
+
+                // Find name, path and fileId of each asset referenced directly and indirectly by assetFileInfo including itself
+                targetAssets = targetAssets.Concat(assetsFileInst.GetDependentAssetIds(visited, ext.instance.GetBaseField(), am, progressBar, true)
+                                           .Prepend((ext, name, assetsFileInst.name, 0, assetFileInfo.index, 0)));
             }
+
             return targetAssets;
         }
 

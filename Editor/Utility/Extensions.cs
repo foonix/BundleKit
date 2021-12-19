@@ -150,7 +150,7 @@ namespace BundleKit.Utility
                 return inst.dependencies[fileId - 1];
         }
 
-        public static IEnumerable<AssetData> GetDependentAssetIds(this AssetsFileInstance inst, HashSet<AssetID> visited, AssetTypeValueField field, AssetsManager am, ThunderKit.Common.Logging.ProgressBar progressBar)
+        public static IEnumerable<AssetData> GetDependentAssetIds(this AssetsFileInstance inst, HashSet<AssetID> visited, AssetTypeValueField field, AssetsManager am, ThunderKit.Common.Logging.ProgressBar progressBar, bool crossFiles)
         {
             var fieldStack = new Stack<(AssetsFileInstance inst, AssetTypeValueField field, int depth)>();
             fieldStack.Push((inst, field, depth: 0));
@@ -180,20 +180,18 @@ namespace BundleKit.Utility
                             var pathId = child.Get("m_PathID").GetValue().AsInt64();
 
                             var assetId = currentInst.ConvertToAssetID(fileId, pathId);
-                            if (assetId == null) continue;
-                            if (visited.Contains(assetId)) continue;
+                            if ((!crossFiles && fileId > 0) ||pathId == 0 || assetId == null || visited.Contains(assetId))
+                                continue;
+
                             visited.Add(assetId);
-
-                            //not a null pptr
-                            if (pathId == 0) continue;
-
                             var ext = am.GetExtAsset(currentInst, fileId, pathId);
-                            //we don't want to process monobehaviours as thats a project in itself
-                            if (ext.info.curFileType == (int)AssetClassID.MonoBehaviour) continue;
-
-                            var name = GetName(ext);
-
+                            var name = ext.GetName(am);
                             progressBar.Update($"({(AssetClassID)ext.info.curFileType}) {name}", $"Collecting Dependencies", ((++p) % modVal) / modVal);
+
+                            //we don't want to process monobehaviours as thats a project in itself
+                            if (ext.info.curFileType == (int)AssetClassID.MonoBehaviour)
+                                continue;
+
 
                             yield return (ext, name, ext.file.name, fileId, pathId, depth);
 
@@ -201,14 +199,14 @@ namespace BundleKit.Utility
                         }
                         else
                             //recurse through dependencies
-                            fieldStack.Push((currentInst, child, depth + 1));
+                            fieldStack.Push((currentInst, child, depth));
                     }
                 }
             }
 
         }
 
-        public static string GetName(this AssetExternal asset)
+        public static string GetName(this AssetExternal asset, AssetsManager am)
         {
             //return AssetHelper.GetAssetNameFastNaive(asset.file.file, asset.info);
             switch ((AssetClassID)asset.info.curFileType)
@@ -222,9 +220,7 @@ namespace BundleKit.Utility
                     var shaderNameField = parsedFormField.Get("m_Name");
                     return shaderNameField.GetValue().AsString();
                 default:
-                    var foundName = asset.info.ReadName(asset.file.file, out var name);
-                    if (foundName) return name;
-                    else return string.Empty;
+                    return AssetHelper.GetAssetNameFast(asset.file.file, am.classFile, asset.info);
             }
         }
 
