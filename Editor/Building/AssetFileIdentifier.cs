@@ -1,6 +1,8 @@
 ﻿using BundleKit.Bundles;
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using UnityEditor;
 using UnityEditor.Build.Content;
 using UnityEditor.Build.Pipeline.Interfaces;
@@ -10,46 +12,42 @@ namespace BundleKit.Building
 {
     public class AssetFileIdentifier : IDeterministicIdentifiers
     {
-        private Dictionary<long, long> indexMap;
-        public AssetsReferenceBundle AssetsReferenceBundle { get; }
-
-        public AssetFileIdentifier(AssetsReferenceBundle assetsReferenceBundle)
-        {
-            var assetMaps = assetsReferenceBundle.mappingData.AssetMaps;
-            indexMap = new Dictionary<long, long>();
-            for (int i = 0; i < assetsReferenceBundle.Assets.Length - 1; i++)
-            {
-                UnityEngine.Object obj = assetsReferenceBundle.Assets[i];
-                Assets.AssetMap assetMap = assetMaps[i];
-                AssetDatabase.TryGetGUIDAndLocalFileIdentifier(obj, out string _, out long pathId);
-                indexMap[pathId] = assetMap.ResourcePointer.pathId;
-            }
-            AssetsReferenceBundle = assetsReferenceBundle;
-        }
-
-
+        Dictionary<AssetsReferenceBundle, Dictionary<long, long>> AssetLookup = new Dictionary<AssetsReferenceBundle, Dictionary<long, long>>();
         public string GenerateInternalFileName(string name)
         {
-            if (name == "resources.assets")
-                return "resources.assets";
+            if (Path.GetExtension(name) == ".assets")
+                return name;
 
             return "CAB-" + HashingMethods.Calculate<MD4>(name);
         }
         public long SerializationIndexFromObjectIdentifier(ObjectIdentifier objectID)
         {
-            AssetDatabase.TryGetGUIDAndLocalFileIdentifier(AssetsReferenceBundle, out string arbGuid, out long arbLocalId);
             var path = AssetDatabase.GUIDToAssetPath(objectID.guid.ToString());
-            var mainAsset = AssetDatabase.LoadMainAssetAtPath(path);
-            if (arbGuid == objectID.guid.ToString() || objectID.guid == default || mainAsset is AssetsReferenceBundle)
+            var mainAsset = AssetDatabase.LoadMainAssetAtPath(path) as AssetsReferenceBundle;
+
+            if (mainAsset || (objectID.filePath.StartsWith("archive:/") && objectID.filePath.EndsWith(".assets")))
             {
-                var reps = AssetDatabase.LoadAllAssetRepresentationsAtPath(path);
-                if (indexMap.ContainsKey(objectID.localIdentifierInFile))
+                if (!mainAsset)
                 {
-                    long localId = indexMap[objectID.localIdentifierInFile];
-                    return localId;
+                    var nameLength = objectID.filePath.Length - ("archive:/".Length + ".assets".Length);
+                    var assetName = objectID.filePath.Substring("archive:/".Length, nameLength);
+                    mainAsset = AssetDatabase.FindAssets($"{assetName} t:{nameof(AssetsReferenceBundle)}").Select(AssetDatabase.GUIDToAssetPath).Select(AssetDatabase.LoadAssetAtPath<AssetsReferenceBundle>).FirstOrDefault();
                 }
-                else
-                    return objectID.localIdentifierInFile;
+                if (mainAsset)
+                {
+                    if (!AssetLookup.ContainsKey(mainAsset))
+                    {
+                        AssetLookup[mainAsset] = new Dictionary<long, long>();
+                        for (int i = 0; i < mainAsset.Assets.Length; i++)
+                            AssetLookup[mainAsset].Add(mainAsset.LoadedIds[i], mainAsset.LocalIds[i]);
+                    }
+                    if (AssetLookup[mainAsset].ContainsKey(objectID.localIdentifierInFile))
+                    {
+                        long sourceId = AssetLookup[mainAsset][objectID.localIdentifierInFile];
+                        return sourceId;
+                    }
+                }
+                return objectID.localIdentifierInFile;
             }
             else
             {

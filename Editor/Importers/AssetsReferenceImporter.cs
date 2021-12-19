@@ -6,16 +6,16 @@ using ThunderKit.Common.Package;
 using UnityEditor;
 using UnityEditor.Experimental.AssetImporters;
 using UnityEngine;
-using Exception = System.Exception;
 
 namespace BundleKit.Bundles
 {
     using static HideFlags;
-    [ScriptedImporter(4, new[] { "assetsreference" })]
+    [ScriptedImporter(4, new[] { Extension })]
     public class AssetsReferenceImporter : ScriptedImporter
     {
-        public MaterialDefinition[] customMaterialDefinitions;
+        public const string Extension = "assetsreference";
 
+        public MaterialDefinition[] customMaterialDefinitions;
         public override void OnImportAsset(AssetImportContext ctx)
         {
             var bundleName = Path.GetFileName(ctx.assetPath);
@@ -29,30 +29,20 @@ namespace BundleKit.Bundles
             ctx.AddObjectToAsset(bundle.name, bundleAsset);
             ctx.SetMainObject(bundleAsset);
 
-            Object[] allAssets = bundle.LoadAllAssets().OrderBy(a =>
+            var allLoadedAssets = bundle.LoadAllAssets();
+            bundleAsset.Assets = allLoadedAssets.OrderBy(a =>
             {
-                if (AssetDatabase.TryGetGUIDAndLocalFileIdentifier(a, out string guid, out long localId))
-                {
-                    return localId;
-                }
-                return long.MaxValue;
+                var foundInfo = AssetDatabase.TryGetGUIDAndLocalFileIdentifier(a, out string guid, out long localId);
+                return localId;
             }).ToArray();
-            try
-            {
-                var mappingDataJson = allAssets.OfType<TextAsset>().First(ta => ta.name == "mappingdata.json");
-                var data = JsonUtility.FromJson<MappingData>(mappingDataJson.text);
-                bundleAsset.mappingData = data;
-            }
-            catch (Exception e)
-            {
-                Debug.LogError(e);
-            }
-            bundleAsset.Assets = allAssets;
+            bundleAsset.LocalIds = new long[bundleAsset.Assets.Length];
+
             var textureLookup = new Dictionary<long, Texture>();
-            for (int i = 0; i < allAssets.Length; i++)
+            for (int i = 0; i < bundleAsset.Assets.Length; i++)
             {
                 var asset = bundleAsset.Assets[i];
-                asset.name = $"{asset.name} (Asset Reference)";
+                var foundInfo = AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out string guid, out long localId);
+                bundleAsset.LocalIds[i] = localId;
                 if (asset is Shader shader)
                 {
                     ShaderUtil.RegisterShader(shader);
@@ -60,7 +50,7 @@ namespace BundleKit.Bundles
                 }
                 if (asset is Texture2D)
                 {
-                    if (AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out string guid, out long localId))
+                    if (foundInfo)
                         textureLookup[localId] = asset as Texture;
                     continue;
                 }

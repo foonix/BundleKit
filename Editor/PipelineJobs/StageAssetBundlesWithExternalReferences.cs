@@ -34,7 +34,6 @@ namespace BundleKit.PipelineJobs
         public BuildTarget buildTarget = BuildTarget.StandaloneWindows;
         public BuildTargetGroup buildTargetGroup = BuildTargetGroup.Standalone;
         public Compression compression = Compression.Uncompressed;
-        public AssetsReferenceBundle AssetsReferenceBundle;
         public bool simulate;
 
         [PathReferenceResolver]
@@ -78,7 +77,7 @@ namespace BundleKit.PipelineJobs
             var content = new BundleBuildContent(builds);
 
             var context = new List<IContextObject>();
-            var returnCode = ContentPipeline.BuildAssetBundles(parameters, content, out var result, BuildTaskList(), new AssetFileIdentifier(AssetsReferenceBundle), AssetsReferenceBundle);
+            var returnCode = ContentPipeline.BuildAssetBundles(parameters, content, out var result, BuildTaskList(), new AssetFileIdentifier());
 
             if (returnCode < 0)
             {
@@ -171,7 +170,10 @@ namespace BundleKit.PipelineJobs
         {
             var ignoredExtensions = new[] { ".dll", ".cs" };
             var logBuilder = new StringBuilder();
-            var builds = new AssetBundleBuild[assetBundleDefs.Sum(abd => abd.assetBundles.Length) + 1];
+            var referencedBundles = AssetDatabase.FindAssets($"t:{nameof(AssetsReferenceBundle)}").Select(AssetDatabase.GUIDToAssetPath).ToArray();
+            int definedBundleCount = assetBundleDefs.Sum(abd => abd.assetBundles.Length);
+            int buildCount = definedBundleCount + referencedBundles.Length;
+            var builds = new AssetBundleBuild[buildCount];
             logBuilder.AppendLine($"Defining {builds.Length} AssetBundleBuilds");
 
             var buildsIndex = 0;
@@ -202,16 +204,14 @@ namespace BundleKit.PipelineJobs
                     {
                         PopulateWithExplicitAssets(def.assets, assets);
 
-                        var dependencies = assets
-                            .SelectMany(assetPath => AssetDatabase.GetDependencies(assetPath))
-                            .Where(assetPath => !ignoredExtensions.Contains(Path.GetExtension(assetPath)))
-                            .Where(dap => !explicitAssetPaths.Contains(dap))
-                            .Where(dap => AssetDatabase.GetMainAssetTypeAtPath(dap) != typeof(AssetsReferenceBundle))
-                            .ToArray();
-                        assets.AddRange(dependencies);
+                        var dependencies = assets.SelectMany(assetPath => AssetDatabase.GetDependencies(assetPath))
+                                                 .Where(assetPath => !ignoredExtensions.Contains(Path.GetExtension(assetPath)))
+                                                 .Where(dap => !explicitAssetPaths.Contains(dap)).ToArray();
+
+                        assets.AddRange(dependencies.Where(dap => Path.GetExtension(dap) != $".{AssetsReferenceImporter.Extension}"));
                     }
 
-                    build.assetNames = assets
+                    build.assetNames = assets 
                         .Select(ap => ap.Replace("\\", "/"))
                         .Where(dap => !ArrayUtility.Contains(Constants.ExcludedExtensions, Path.GetExtension(dap)) &&
                                       !ArrayUtility.Contains(sourceFiles, dap) &&
@@ -234,12 +234,15 @@ namespace BundleKit.PipelineJobs
             logBuilder.AppendLine("--------------------------------------------------");
             logBuilder.AppendLine($"Defining bundle: resources.assets");
             logBuilder.AppendLine();
-            var mainAssetPath = AssetDatabase.GetAssetPath(AssetsReferenceBundle);
-            builds[builds.Length - 1] = new AssetBundleBuild()
+            for(int i = 0; i < referencedBundles.Length; i++)
             {
-                assetBundleName = "resources.assets",
-                assetNames = new[] { mainAssetPath }
-            };
+                var resourcesPath = referencedBundles[i];
+                builds[definedBundleCount + i] = new AssetBundleBuild()
+                {
+                    assetBundleName = $"{Path.GetFileNameWithoutExtension(resourcesPath)}.assets",
+                    assetNames = new[] { resourcesPath }
+                };
+            }
             foreach (var asset in builds[builds.Length - 1].assetNames)
                 logBuilder.AppendLine(asset);
             logBuilder.AppendLine("--------------------------------------------------");

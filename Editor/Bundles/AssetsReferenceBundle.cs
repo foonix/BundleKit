@@ -1,29 +1,30 @@
-﻿using BundleKit.Assets;
+﻿using AssetsTools.NET.Extra;
 using System.Linq;
 using UnityEditor;
-using UnityEditor.Build.Pipeline.Interfaces;
 using UnityEngine;
 
 namespace BundleKit.Bundles
 {
-    public class AssetsReferenceBundle : ScriptableObject, IAssetsReference
+    public class AssetsReferenceBundle : ScriptableObject
     {
         public Material[] CustomMaterials;
         public Object[] Assets;
-        public MappingData mappingData;
-
+        public long[] LocalIds;
+        public long[] LoadedIds;
+        public string archiveName;
         public Object[] References => Assets;
-        public MappingData MappingData => mappingData;
-
+        AssetBundle bundle;
         [InitializeOnLoadMethod]
         static void ReloadAssetsReferenceBundles()
         {
             var arbs = AssetDatabase.FindAssets($"t:{nameof(AssetsReferenceBundle)}")
                 .Select(guid => AssetDatabase.GUIDToAssetPath(guid))
                 .Select(path => AssetDatabase.LoadAssetAtPath<AssetsReferenceBundle>(path));
+
             foreach (var arb in arbs)
             {
                 arb.Initialize();
+
             }
         }
 
@@ -32,17 +33,28 @@ namespace BundleKit.Bundles
             if (!EditorUtility.IsPersistent(this)) return;
             var path = AssetDatabase.GetAssetPath(this);
             var allBundles = AssetBundle.GetAllLoadedAssetBundles().ToArray();
-            var bundle = allBundles
+            bundle = allBundles
                 .FirstOrDefault(bnd => bnd.name.Contains(name));
             if (!bundle)
                 bundle = AssetBundle.LoadFromFile(path);
+            var am = new AssetsManager();
+            var bun = am.LoadBundleFile(path);
+            var bundleAssetsFile = am.LoadAssetsFileFromBundle(bun, 0);
+            archiveName = bundleAssetsFile.name;
+            am.UnloadAll();
             hideFlags = HideFlags.None;
         }
-    }
 
-    internal interface IAssetsReference : IContextObject
-    {
-        Object[] References { get; }
-        MappingData MappingData { get; }
+        private void Awake()
+        {
+            if (Assets == null) return;
+            Initialize();
+            LoadedIds = new long[Assets.Length];
+            for (int i = 0; i < Assets.Length; i++)
+            {
+                var found = AssetDatabase.TryGetGUIDAndLocalFileIdentifier(Assets[i], out string guid, out long loadedId);
+                LoadedIds[i] = loadedId;
+            }
+        }
     }
 }

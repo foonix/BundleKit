@@ -74,7 +74,7 @@ namespace BundleKit.Utility
 
         public static void SetValue(this AssetTypeValueField valueField, string fieldName, object value)
         {
-            valueField.Get(fieldName).GetValue().Set(value);
+            valueField.GetField(fieldName).GetValue().Set(value);
         }
         public static void RemapPPtrs(this AssetTypeValueField field, IDictionary<(int fileId, long pathId), (int fileId, long pathId)> map)
         {
@@ -150,11 +150,12 @@ namespace BundleKit.Utility
                 return inst.dependencies[fileId - 1];
         }
 
-        public static IEnumerable<AssetData> GetDependentAssetIds(this AssetsFileInstance inst, AssetTypeValueField field, AssetsManager am)
+        public static IEnumerable<AssetData> GetDependentAssetIds(this AssetsFileInstance inst, HashSet<AssetID> visited, AssetTypeValueField field, AssetsManager am, ThunderKit.Common.Logging.ProgressBar progressBar)
         {
-            var visited = new HashSet<AssetID>();
             var fieldStack = new Stack<(AssetsFileInstance inst, AssetTypeValueField field, int depth)>();
             fieldStack.Push((inst, field, depth: 0));
+            long p = 0;
+            float modVal = 100f;
             while (fieldStack.Any())
             {
                 var set = fieldStack.Pop();
@@ -192,7 +193,9 @@ namespace BundleKit.Utility
 
                             var name = GetName(ext);
 
-                            yield return (ext, child, name, ext.file.name, fileId, pathId, depth);
+                            progressBar.Update($"({(AssetClassID)ext.info.curFileType}) {name}", $"Collecting Dependencies", ((++p) % modVal) / modVal);
+
+                            yield return (ext, name, ext.file.name, fileId, pathId, depth);
 
                             fieldStack.Push((ext.file, ext.instance.GetBaseField(), depth + 1));
                         }
@@ -204,52 +207,16 @@ namespace BundleKit.Utility
             }
 
         }
-        public static IEnumerable<AssetData> GetDependentAssetIdsRecursive(this AssetsFileInstance inst, AssetTypeValueField field, AssetsManager am, int depth = 1)
-        {
-            foreach (AssetTypeValueField child in field.children)
-            {
-                //not a value (ie not an int)
-                if (!child.templateField.hasValue)
-                {
-                    //not array of values either
-                    if (child.templateField.isArray && child.templateField.children[1].valueType != EnumValueTypes.ValueType_None)
-                        continue;
 
-                    string typeName = child.templateField.type;
-                    //is a pptr
-                    if (typeName.StartsWith("PPtr<") && typeName.EndsWith(">") /*&& child.childrenCount == 2*/)
-                    {
-                        int fileId = child.Get("m_FileID").GetValue().AsInt();
-                        long pathId = child.Get("m_PathID").GetValue().AsInt64();
-
-                        //not a null pptr
-                        if (pathId == 0) continue;
-
-
-                        var ext = am.GetExtAsset(inst, fileId, pathId);
-
-                        //we don't want to process monobehaviours as thats a project in itself
-                        if (ext.info.curFileType == (int)AssetClassID.MonoBehaviour) continue;
-                        var name = GetName(ext);
-
-                        yield return (ext, child, name, ext.file.name, fileId, pathId, depth);
-
-                        //recurse through dependencies
-                        foreach (var dep in GetDependentAssetIdsRecursive(ext.file, ext.instance.GetBaseField(), am, depth + 1))
-                            yield return dep;
-                    }
-                    else
-                        //recurse through dependencies
-                        foreach (var dep in GetDependentAssetIdsRecursive(inst, child, am, depth + 1))
-                            yield return dep;
-                }
-            }
-        }
         public static string GetName(this AssetExternal asset)
         {
             //return AssetHelper.GetAssetNameFastNaive(asset.file.file, asset.info);
             switch ((AssetClassID)asset.info.curFileType)
             {
+                case AssetClassID.MonoBehaviour:
+                    var nameField = asset.instance.GetBaseField().Get("m_Name");
+                    return nameField.GetValue().AsString();
+
                 case AssetClassID.Shader:
                     var parsedFormField = asset.instance.GetBaseField().Get("m_ParsedForm");
                     var shaderNameField = parsedFormField.Get("m_Name");
