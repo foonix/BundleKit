@@ -31,7 +31,9 @@ namespace BundleKit.PipelineJobs
             {
                 InitializeContainers(nameRegexFilters, out var assetsReplacers, out var contexts, out var newContainerChildren, out var nameRegex);
                 InitializePaths(bundle, outputAssetBundlePath, out var resourcesFilePath, out var ggmPath, out var fileName, out var path, out var dataDirectoryPath);
-                InitializeAssetTools(resourcesFilePath, path, ref am, out var bun, out var bundleAssetsFile, out var resourcesInst, out var assetBundleAsset, out var assetBundleExtAsset, out var bundleBaseField);
+
+                am = new AssetsManager();
+                var resourcesInst = am.InitializeAssetTools(resourcesFilePath);
 
                 var assets = CollectAssets(am, resourcesInst, nameRegex, classes, progressBar)
                                     .Where(asset => asset.AssetFileName.Equals("resources.assets"))
@@ -39,7 +41,10 @@ namespace BundleKit.PipelineJobs
                                     .OrderBy(ta => ta.PathId)
                                     .ToArray();
 
+                am.PrepareNewBundle(path, out var bun, out var bundleAssetsFile, out var assetBundleExtAsset);
+
                 // Update bundle assets name and bundle name to the name specified in outputAssetBundlePath
+                var bundleBaseField = assetBundleExtAsset.instance.GetBaseField();
                 bundleBaseField.SetValue("m_Name", fileName);
                 bundleBaseField.SetValue("m_AssetBundleName", fileName);
 
@@ -74,7 +79,7 @@ namespace BundleKit.PipelineJobs
 
                 //Save changes for building new bundle file
                 var newAssetBundleBytes = bundleBaseField.WriteToByteArray();
-                assetsReplacers.Add(new AssetsReplacerFromMemory(0, assetBundleAsset.index, (int)assetBundleAsset.curFileType, 0xFFFF, newAssetBundleBytes));
+                assetsReplacers.Add(new AssetsReplacerFromMemory(0, assetBundleExtAsset.info.index, (int)assetBundleExtAsset.info.curFileType, 0xFFFF, newAssetBundleBytes));
                 assetsReplacers = assetsReplacers.OrderBy(repl => repl.GetPathID()).ToList();
 
                 if (File.Exists(outputAssetBundlePath)) File.Delete(outputAssetBundlePath);

@@ -23,27 +23,30 @@ namespace BundleKit.PipelineJobs
             fileName = Path.GetFileName(outputAssetBundlePath);
             bundlePath = AssetDatabase.GetAssetPath(bundle);
         }
-        public static void InitializeAssetTools(string resourcesFilePath, string path, ref AssetsManager am, out BundleFileInstance bun, out AssetsFileInstance bundleAssetsFile, out AssetsFileInstance resourcesInst, out AssetFileInfoEx assetBundleAsset, out AssetExternal assetBundleExtAsset, out AssetTypeValueField bundleBaseField)
+        public static AssetsFileInstance InitializeAssetTools(this AssetsManager am, string assetsFilePath)
         {
-            am = new AssetsManager();
-            //Load bundle file and its AssetsFile
-            bun = am.LoadBundleFile(path, true);
-            bundleAssetsFile = am.LoadAssetsFileFromBundle(bun, 0);
-
             // Load assets files from Resources
-            resourcesInst = am.LoadAssetsFile(resourcesFilePath, true);
-
-            //Load AssetBundle asset from Bundle AssetsFile so that we can update its data later
-            assetBundleAsset = bundleAssetsFile.table.GetAssetsOfType((int)AssetClassID.AssetBundle)[0];
-            assetBundleExtAsset = am.GetExtAsset(bundleAssetsFile, 0, assetBundleAsset.index);
+            var assetsFileInst = am.LoadAssetsFile(assetsFilePath, true);
 
             //load data for classes
             var classDataPath = Path.Combine("Packages", "com.passivepicasso.bundlekit", "Library", "classdata.tpk");
             am.LoadClassPackage(classDataPath);
-            am.LoadClassDatabaseFromPackage(resourcesInst.file.typeTree.unityVersion);
+            am.LoadClassDatabaseFromPackage(assetsFileInst.file.typeTree.unityVersion);
 
-            bundleBaseField = assetBundleExtAsset.instance.GetBaseField();
+            return assetsFileInst;
         }
+
+        public static void PrepareNewBundle(this AssetsManager am, string path, out BundleFileInstance bun, out AssetsFileInstance bundleAssetsFile, out AssetExternal assetBundleExtAsset)
+        {
+            //Load bundle file and its AssetsFile
+            bun = am.LoadBundleFile(path, true);
+            bundleAssetsFile = am.LoadAssetsFileFromBundle(bun, 0);
+
+            //Load AssetBundle asset from Bundle AssetsFile so that we can update its data later
+            var assetBundleAsset = bundleAssetsFile.table.GetAssetsOfType((int)AssetClassID.AssetBundle)[0];
+            assetBundleExtAsset = am.GetExtAsset(bundleAssetsFile, 0, assetBundleAsset.index);
+        }
+
         public static void InitializeContainers(string[] regexFilters, out List<AssetsReplacer> assetsReplacers, out List<string> contexts, out List<AssetTypeValueField> newContainerChildren, out Regex[] nameRegex)
         {
             assetsReplacers = new List<AssetsReplacer>();
