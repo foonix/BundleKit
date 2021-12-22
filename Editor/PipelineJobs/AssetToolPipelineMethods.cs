@@ -70,16 +70,26 @@ namespace BundleKit.PipelineJobs
         }
 
 
-        public static void AddDependency(this AssetsFileInstance assetsFileInst, string assetsFilePath)
+        const string unityBuiltinExtra = "Resources/unity_builtin_extra";
+        const string unityDefaultResources = "Resources/unity default resources";
+
+        public static void AddDependency(this AssetsFileInstance assetsFileInst, AssetsFileDependency assetsFileDependency)
         {
             var dependencies = assetsFileInst.file.dependencies.dependencies;
+            
+            var assetsFilePath = assetsFileDependency.assetPath;
+            var fixedPath = assetsFilePath;
+            if (assetsFilePath != unityBuiltinExtra && assetsFilePath != unityDefaultResources)
+                fixedPath = $"{assetsFilePath}reference";
 
             dependencies.Add(
                 new AssetsFileDependency
                 {
-                    assetPath = assetsFilePath,
-                    originalAssetPath = assetsFilePath,
-                    bufferedPath = string.Empty
+                    assetPath = fixedPath,
+                    originalAssetPath = fixedPath,
+                    bufferedPath = string.Empty,
+                    guid = assetsFileDependency.guid,
+                    type = assetsFileDependency.type
                 }
             );
             assetsFileInst.file.dependencies.dependencyCount = dependencies.Count;

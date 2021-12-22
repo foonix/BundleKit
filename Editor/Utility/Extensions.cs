@@ -29,6 +29,7 @@ namespace BundleKit.Utility
             return tracker?.UpdateInfo(taskInfo) ?? true;
         }
     }
+
     public static class Extensions
     {
         public static UnityEngine.BuildCompression AsBuildCompression(this Compression compression)
@@ -45,17 +46,29 @@ namespace BundleKit.Utility
 
             throw new NotSupportedException();
         }
-        public static bool IsNullOrEmpty<T>(this ICollection<T> collection)
+        public static bool IsNullOrEmpty<T>(this ICollection<T> collection) => collection == null || collection.Count == 0;
+
+        public static IEnumerable<AssetTypeValueField> FindField(this AssetTypeValueField valueField, string fieldPath)
         {
-            return collection == null || collection.Count == 0;
+            var fieldStack = new Stack<AssetTypeValueField>();
+            AssetTypeValueField field = null;
+            fieldStack.Push(valueField);
+            while (fieldStack.Any())
+            {
+                field = fieldStack.Pop();
+                if (field.childrenCount > 0)
+                {
+                    var targetField = field.Get(fieldPath);
+                    if (targetField.childrenCount > -1)
+                    {
+                        yield return targetField;
+                    }
+                    foreach (var child in field.children)
+                        fieldStack.Push(child);
+                }
+            }
         }
-        public static AssetTypeValueField GetField(this AssetTypeValueField valueField, string fieldPath)
-        {
-            var field = valueField;
-            foreach (var pathField in fieldPath.Split('/'))
-                field = field.Get(pathField);
-            return field;
-        }
+
         public static AssetTypeValueField Get(this AssetTypeValueField valueField, params string[] fieldPath)
         {
             var field = valueField;
@@ -64,18 +77,12 @@ namespace BundleKit.Utility
             return field;
         }
 
-        public static AssetTypeValue GetValue(this AssetTypeValueField valueField, string fieldName)
-        {
-            var field = valueField;
-            foreach (var pathField in fieldName.Split('/'))
-                field = field.Get(pathField);
-            return field.GetValue();
-        }
+        public static AssetTypeValueField GetField(this AssetTypeValueField valueField, string fieldPath) => valueField.Get(fieldPath.Split('/'));
 
-        public static void SetValue(this AssetTypeValueField valueField, string fieldName, object value)
-        {
-            valueField.GetField(fieldName).GetValue().Set(value);
-        }
+        public static AssetTypeValue GetValue(this AssetTypeValueField valueField, string fieldName) => valueField.Get(fieldName.Split('/')).GetValue();
+
+        public static void SetValue(this AssetTypeValueField valueField, string fieldName, object value) => valueField.GetField(fieldName).GetValue().Set(value);
+
         public static void RemapPPtrs(this AssetTypeValueField field, IDictionary<(int fileId, long pathId), (int fileId, long pathId)> map)
         {
             var fieldStack = new Stack<AssetTypeValueField>();
@@ -180,7 +187,7 @@ namespace BundleKit.Utility
                             var pathId = child.Get("m_PathID").GetValue().AsInt64();
 
                             var assetId = currentInst.ConvertToAssetID(fileId, pathId);
-                            if ((!crossFiles && fileId > 0) ||pathId == 0 || assetId == null || visited.Contains(assetId))
+                            if ((!crossFiles && fileId > 0) || pathId == 0 || assetId == null || visited.Contains(assetId))
                                 continue;
 
                             visited.Add(assetId);

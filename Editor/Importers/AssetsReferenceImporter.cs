@@ -1,32 +1,56 @@
-﻿using BundleKit.Assets;
+﻿using AssetsTools.NET.Extra;
+using BundleKit.Assets;
+using BundleKit.PipelineJobs;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using ThunderKit.Common.Package;
 using UnityEditor;
-using UnityEditor.Experimental.AssetImporters;
 using UnityEngine;
+using UnityEditor.Experimental.AssetImporters;
 
 namespace BundleKit.Bundles
 {
     using static HideFlags;
-    [ScriptedImporter(4, new[] { Extension })]
+    [ScriptedImporter(7, new[] { Extension })]
     public class AssetsReferenceImporter : ScriptedImporter
     {
         public const string Extension = "assetsreference";
 
         public MaterialDefinition[] customMaterialDefinitions;
+
         public override void OnImportAsset(AssetImportContext ctx)
         {
+            var am = new AssetsManager();
+            am.PrepareNewBundle(ctx.assetPath, out var bun, out var bundleAssetsFile, out var assetBundleExtAsset);
+
+            var filefileDepDeps = assetBundleExtAsset.file.file.dependencies.dependencies;
+            var filefileDepDepNames = filefileDepDeps.Select(inst => inst.assetPath).ToArray();
+            am.UnloadAll();
+            foreach (var ffddName in filefileDepDepNames)
+            {
+                if (ffddName == "unity_builtin_extra" || ffddName == "unity default resources")
+                    continue;
+                ctx.DependsOnSourceAsset($"Assets/{ffddName}.assetsreference");
+            }
+
             var bundleName = Path.GetFileName(ctx.assetPath);
             var bundle = AssetBundle.GetAllLoadedAssetBundles().FirstOrDefault(bnd => ctx.assetPath.Contains(bnd.name));
-            bundle?.Unload(true);
-            bundle = AssetBundle.LoadFromFile(ctx.assetPath);
+            bundle?.Unload(false);
+            try
+            {
+                bundle = AssetBundle.LoadFromFile(ctx.assetPath);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Failed to load: {ctx.assetPath}");
+            }
             bundle.hideFlags = HideAndDontSave | DontSaveInBuild;
 
             var bundleAsset = ScriptableObject.CreateInstance<AssetsReferenceBundle>();
-            bundleAsset.name = bundle.name;
-            ctx.AddObjectToAsset(bundle.name, bundleAsset);
+            bundleAsset.name = Path.GetFileNameWithoutExtension(ctx.assetPath);
+            ctx.AddObjectToAsset(bundleAsset.name, bundleAsset);
             ctx.SetMainObject(bundleAsset);
 
             var allLoadedAssets = bundle.LoadAllAssets();
@@ -52,7 +76,6 @@ namespace BundleKit.Bundles
                 {
                     if (foundInfo)
                         textureLookup[localId] = asset as Texture;
-                    continue;
                 }
                 ctx.AddObjectToAsset(asset.name, asset);
             }

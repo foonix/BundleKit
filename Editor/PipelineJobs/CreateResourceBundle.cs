@@ -1,5 +1,6 @@
 ﻿using AssetsTools.NET;
 using AssetsTools.NET.Extra;
+using BundleKit.Bundles;
 using BundleKit.Utility;
 using System;
 using System.Collections.Generic;
@@ -19,6 +20,9 @@ namespace BundleKit.PipelineJobs
     [PipelineSupport(typeof(Pipeline))]
     public class CreateResourceBundle : PipelineJob
     {
+        const string unityBuiltinExtra = "Resources/unity_builtin_extra";
+        const string unityDefaultResources = "Resources/unity default resources";
+
         [Serializable]
         public struct Filter
         {
@@ -31,6 +35,15 @@ namespace BundleKit.PipelineJobs
         public Filter[] filters;
 
         AssetsManager am;
+
+        struct LoadSet
+        {
+            public readonly string[] AssetBundlePaths;
+            public LoadSet(string[] assetBundlePaths) => AssetBundlePaths = assetBundlePaths;
+        }
+
+
+
         public override Task Execute(Pipeline pipeline)
         {
             using (var progressBar = new ProgressBar("Constructing AssetBundle"))
@@ -39,11 +52,15 @@ namespace BundleKit.PipelineJobs
                     return Task.CompletedTask;
 
                 var settings = ThunderKitSetting.GetOrCreateSettings<ThunderKitSettings>();
-                var dataDirectoryPath = Path.Combine(settings.GamePath, $"{Path.GetFileNameWithoutExtension(settings.GameExecutable)}_Data");
+                string gameName = Path.GetFileNameWithoutExtension(settings.GameExecutable);
+                var dataDirectoryPath = Path.Combine(settings.GamePath, $"{gameName}_Data");
+
                 var sharedAssetsFiles = Directory.EnumerateFiles(dataDirectoryPath, "sharedassets*.assets").ToArray();
-                var sharedAssetsresSFiles = Directory.EnumerateFiles(dataDirectoryPath, "sharedassets*.assets.resS").ToArray();
                 var resourcesFilePath = Path.Combine(dataDirectoryPath, "resources.assets");
                 var ggmPath = Path.Combine(dataDirectoryPath, "globalgamemanagers.assets");
+
+                var targetFiles = sharedAssetsFiles.Prepend(resourcesFilePath).Prepend(ggmPath).ToArray();
+
                 var templateBundlePath = AssetDatabase.GetAssetPath(bundle);
 
                 var contexts = new List<string>();
@@ -57,10 +74,7 @@ namespace BundleKit.PipelineJobs
                 am.LoadClassPackage(classDataPath);
                 var visited = new HashSet<AssetID>();
 
-                IEnumerable<Assets.AssetData> collected = sharedAssetsFiles
-                    .Prepend(resourcesFilePath)
-                    .Prepend(ggmPath)
-                    .SelectMany(p =>
+                IEnumerable<Assets.AssetData> collected = targetFiles.SelectMany(p =>
                         filters.SelectMany(filter =>
                         {
                             var nameRegex = filter.nameRegex.Select(reg => new Regex(reg)).ToArray();
@@ -69,6 +83,8 @@ namespace BundleKit.PipelineJobs
                     );
 
                 var assetsByFile = collected.GroupBy(data => data.AssetFileName).ToArray();
+                var streamReaders = new Dictionary<string, Stream>();
+                var bundles = new HashSet<BundleFileInstance>();
                 foreach (var assetGroup in assetsByFile)
                 {
                     newContainerChildren.Clear();
@@ -76,20 +92,20 @@ namespace BundleKit.PipelineJobs
                     var groupArray = assetGroup.ToArray();
                     var dupeGroups = groupArray.GroupBy(data => data.PathId).ToArray();
                     var assets = dupeGroups.Select(group => group.First()).ToList();
-                    string fileName = assetGroup.Key;
-                    //if (fileName == "unity_builtin_extra") continue;
+                    string fileName = $"{assetGroup.Key}reference";
                     var assetsFileInst = assets.First().AssetExt.file;
-                    var outputPath = Path.Combine(outputDirectory, $"{fileName}reference");
+                    var outputPath = Path.Combine(outputDirectory, fileName);
 
                     am.PrepareNewBundle(templateBundlePath, out var bun, out var bundleAssetsFile, out var assetBundleExtAsset);
+
                     // Update bundle assets name and bundle name to the name specified in outputAssetBundlePath
                     var bundleBaseField = assetBundleExtAsset.instance.GetBaseField();
                     bundleBaseField.SetValue("m_Name", fileName);
                     bundleBaseField.SetValue("m_AssetBundleName", fileName);
 
                     bundleAssetsFile.file.dependencies.dependencies.Clear();
-                    foreach (var dependency in assetsFileInst.file.dependencies.dependencies)
-                        bundleAssetsFile.AddDependency(dependency.assetPath);
+                    foreach (var dependency in assetsFileInst.file.dependencies.dependencies) 
+                        bundleAssetsFile.AddDependency(dependency);
 
                     UpdateAssetBundleDependencies(bundleBaseField, bundleAssetsFile.file.dependencies.dependencies);
 
@@ -97,22 +113,58 @@ namespace BundleKit.PipelineJobs
                     var containerArray = bundleBaseField.GetField("m_Container/Array");
                     foreach (var (asset, assetName, assetFileName, fileId, pathId, depth) in assets)
                     {
-                        var assetBaseField = asset.instance.GetBaseField();
-                        var fieldType = assetBaseField.GetFieldType();
-                        var streamData = assetBaseField.Get("m_StreamData");
-                        if (streamData?.children != null)
-                        {
-                            var path = streamData.Get("path");
-                            var streamPath = path.GetValue().AsString();
-                            if (!string.IsNullOrEmpty(streamPath))
-                                assetBaseField.SetValue("m_StreamData/path", Path.Combine(dataDirectoryPath, streamPath).Replace("\\", "/"));
-                        }
-                        //if (assetBaseField.GetFieldType() == "Texture2D")
-                        //{
-                        //    var texName = assetBaseField.GetValue("m_Name").AsString();
-                        //    var imageDataValue = assetBaseField.GetValue("image data");
-                        //    var imageData = imageDataValue.AsByteArray();
-                        //}
+                        var baseField = asset.instance.GetBaseField();
+                        var streamDatas = baseField.FindField("m_StreamData").ToArray();
+                        foreach (var streamData in streamDatas)
+                            if (streamData?.children != null)
+                            {
+                                var path = streamData.Get("path");
+                                var streamPath = path.GetValue().AsString();
+                                var newPath = Path.Combine(dataDirectoryPath, streamPath);
+                                var fixedNewPath = newPath.Replace("\\", "/");
+                                var m_Width = baseField.Get("m_Width").GetValue().AsInt();
+                                var m_Height = baseField.Get("m_Height").GetValue().AsInt();
+                                var m_TextureFormat = (TextureFormat)baseField.Get("m_TextureFormat").GetValue().AsInt();
+
+                                var offset = streamData.GetValue("offset").AsInt64();
+                                var size = streamData.GetValue("size").AsInt();
+                                var data = new byte[size];
+                                try
+                                {
+                                    Stream stream;
+                                    if (streamReaders.ContainsKey(fixedNewPath))
+                                        stream = streamReaders[fixedNewPath];
+                                    else
+                                        streamReaders[fixedNewPath] = stream = File.OpenRead(fixedNewPath);
+
+                                    stream.Position = offset;
+                                    stream.Read(data, 0, (int)size);
+                                    if (data != null && data.Length > 0)
+                                    {
+                                        streamData.SetValue("offset", 0);
+                                        streamData.SetValue("size", 0);
+                                        streamData.SetValue("path", string.Empty);
+                                        var image_data = baseField.GetField("image data");
+                                        image_data.GetValue().type = EnumValueTypes.ByteArray;
+                                        image_data.templateField.valueType = EnumValueTypes.ByteArray;
+                                        var byteArray = new AssetTypeByteArray()
+                                        {
+                                            size = (uint)data.Length,
+                                            data = data
+                                        };
+                                        image_data.GetValue().Set(byteArray);
+                                        baseField.Get("m_CompleteImageSize").GetValue().Set(data.Length);
+                                    }
+                                    else
+                                    {
+                                        streamData.SetValue("path", fixedNewPath);
+                                    }
+                                }
+                                catch (Exception e)
+                                {
+                                    UnityEngine.Debug.LogError(e);
+                                }
+                            }
 
                         var otherBytes = asset.instance.WriteToByteArray();
                         var currentAssetReplacer = new AssetsReplacerFromMemory(0, pathId, (int)asset.info.curFileType,
@@ -144,30 +196,73 @@ namespace BundleKit.PipelineJobs
                         bundleAssetsFile.file.Write(writer, 0, assetsReplacers, 0, am.classFile);
                         newAssetData = bundleStream.ToArray();
                     }
-
+                    foreach (var replacer in assetsReplacers)
+                        replacer.Dispose();
                     using (var file = File.OpenWrite(outputPath))
                     using (var writer = new AssetsFileWriter(file))
-                    {
-                        var assetsFileName = $"CAB-{GUID.Generate()}";
                         bun.file.Write(writer, new List<BundleReplacer>
                         {
                             new BundleReplacerFromMemory(bundleAssetsFile.name, fileName, true, newAssetData, newAssetData.Length),
                         });
-                    }
                 }
+
+                foreach (var stream in streamReaders)
+                    stream.Value.Dispose();
 
                 pipeline.Log(LogLevel.Information, $"Finished Building Bundle", contexts.ToArray());
                 am.UnloadAll(true);
-
-                foreach (var resSPath in sharedAssetsresSFiles)
-                {
-                    if (File.Exists(Path.GetFileName(resSPath))) continue;
-                    File.Copy(resSPath, Path.GetFileName(resSPath));
-                }
             }
             AssetDatabase.Refresh();
             return Task.CompletedTask;
         }
 
+    }
+
+    internal struct DependencyDatum
+    {
+        public AssetsFileInstance file;
+        public List<AssetsFileDependency> dependencies;
+        public int dependencyCount;
+
+        public DependencyDatum(AssetsFileInstance file, List<AssetsFileDependency> dependencies, int dependencyCount)
+        {
+            this.file = file;
+            this.dependencies = dependencies;
+            this.dependencyCount = dependencyCount;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is DependencyDatum other &&
+                   EqualityComparer<AssetsFileInstance>.Default.Equals(file, other.file) &&
+                   EqualityComparer<List<AssetsFileDependency>>.Default.Equals(dependencies, other.dependencies) &&
+                   dependencyCount == other.dependencyCount;
+        }
+
+        public override int GetHashCode()
+        {
+            int hashCode = -1338859138;
+            hashCode = hashCode * -1521134295 + EqualityComparer<AssetsFileInstance>.Default.GetHashCode(file);
+            hashCode = hashCode * -1521134295 + EqualityComparer<List<AssetsFileDependency>>.Default.GetHashCode(dependencies);
+            hashCode = hashCode * -1521134295 + dependencyCount.GetHashCode();
+            return hashCode;
+        }
+
+        public void Deconstruct(out AssetsFileInstance file, out List<AssetsFileDependency> dependencies, out int dependencyCount)
+        {
+            file = this.file;
+            dependencies = this.dependencies;
+            dependencyCount = this.dependencyCount;
+        }
+
+        public static implicit operator (AssetsFileInstance file, List<AssetsFileDependency> dependencies, int dependencyCount)(DependencyDatum value)
+        {
+            return (value.file, value.dependencies, value.dependencyCount);
+        }
+
+        public static implicit operator DependencyDatum((AssetsFileInstance file, List<AssetsFileDependency> dependencies, int dependencyCount) value)
+        {
+            return new DependencyDatum(value.file, value.dependencies, value.dependencyCount);
+        }
     }
 }
