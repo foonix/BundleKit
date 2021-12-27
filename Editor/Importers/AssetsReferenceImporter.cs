@@ -13,7 +13,7 @@ using UnityEditor.Experimental.AssetImporters;
 namespace BundleKit.Bundles
 {
     using static HideFlags;
-    [ScriptedImporter(7, new[] { Extension })]
+    [ScriptedImporter(14, new[] { Extension })]
     public class AssetsReferenceImporter : ScriptedImporter
     {
         public const string Extension = "assetsreference";
@@ -23,17 +23,26 @@ namespace BundleKit.Bundles
         public override void OnImportAsset(AssetImportContext ctx)
         {
             var am = new AssetsManager();
+            var classDataPath = Path.Combine("Packages", "com.passivepicasso.bundlekit", "Library", "classdata.tpk");
+            am.LoadClassPackage(classDataPath);
+            am.LoadClassDatabaseFromPackage(Application.unityVersion);
+
             am.PrepareNewBundle(ctx.assetPath, out var bun, out var bundleAssetsFile, out var assetBundleExtAsset);
 
             var filefileDepDeps = assetBundleExtAsset.file.file.dependencies.dependencies;
             var filefileDepDepNames = filefileDepDeps.Select(inst => inst.assetPath).ToArray();
             am.UnloadAll();
+            var dependencies = new List<string>();
             foreach (var ffddName in filefileDepDepNames)
             {
-                if (ffddName == "unity_builtin_extra" || ffddName == "unity default resources")
+                if (ffddName == "Resources/unity default resources" || ffddName == "Resources/unity_builtin_extra")
                     continue;
-                ctx.DependsOnSourceAsset($"Assets/{ffddName}.assetsreference");
+
+                string depPath = $"Assets/{ffddName}";
+                dependencies.Add(depPath);
+                ctx.DependsOnSourceAsset(depPath);
             }
+            var dependencyReferences = dependencies.Select(AssetDatabase.LoadAssetAtPath<AssetsReferenceBundle>).Where(arb => arb != null).ToArray();
 
             var bundleName = Path.GetFileName(ctx.assetPath);
             var bundle = AssetBundle.GetAllLoadedAssetBundles().FirstOrDefault(bnd => ctx.assetPath.Contains(bnd.name));
@@ -52,6 +61,9 @@ namespace BundleKit.Bundles
             bundleAsset.name = Path.GetFileNameWithoutExtension(ctx.assetPath);
             ctx.AddObjectToAsset(bundleAsset.name, bundleAsset);
             ctx.SetMainObject(bundleAsset);
+            bundleAsset.dependencies = dependencyReferences;
+            bundleAsset.dependencyNames = dependencies.ToArray();
+            Debug.Log($"Importing Bundle: {ctx.assetPath}", bundleAsset);
 
             var allLoadedAssets = bundle.LoadAllAssets();
             bundleAsset.Assets = allLoadedAssets.OrderBy(a =>
