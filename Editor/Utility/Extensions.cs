@@ -2,6 +2,7 @@
 using AssetsTools.NET.Extra;
 using BundleKit.Assets;
 using BundleKit.Building;
+using BundleKit.PipelineJobs;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -157,7 +158,7 @@ namespace BundleKit.Utility
                 return inst.dependencies[fileId - 1];
         }
 
-        public static IEnumerable<AssetData> GetDependentAssetIds(this AssetsFileInstance inst, HashSet<AssetID> visited, AssetTypeValueField field, AssetsManager am, ThunderKit.Common.Logging.ProgressBar progressBar, bool crossFiles)
+        public static IEnumerable<AssetData> GetDependentAssetIds(this AssetsFileInstance inst, HashSet<AssetID> visited, AssetTypeValueField field, AssetsManager am, UpdateLog Update, bool crossFiles)
         {
             var fieldStack = new Stack<(AssetsFileInstance inst, AssetTypeValueField field, int depth)>();
             fieldStack.Push((inst, field, depth: 0));
@@ -193,7 +194,7 @@ namespace BundleKit.Utility
                             visited.Add(assetId);
                             var ext = am.GetExtAsset(currentInst, fileId, pathId);
                             var name = ext.GetName(am);
-                            progressBar.Update($"({(AssetClassID)ext.info.curFileType}) {name}", $"Collecting Dependencies", ((++p) % modVal) / modVal);
+                            Update($"Collecting Dependencies", $"({(AssetClassID)ext.info.curFileType}) {name}", ((++p) % modVal) / modVal, false);
 
                             //we don't want to process monobehaviours as thats a project in itself
                             if (ext.info.curFileType == (int)AssetClassID.MonoBehaviour)
@@ -215,7 +216,6 @@ namespace BundleKit.Utility
 
         public static string GetName(this AssetExternal asset, AssetsManager am)
         {
-            //return AssetHelper.GetAssetNameFastNaive(asset.file.file, asset.info);
             switch ((AssetClassID)asset.info.curFileType)
             {
                 case AssetClassID.MonoBehaviour:
