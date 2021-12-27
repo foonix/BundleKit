@@ -11,6 +11,7 @@ namespace BundleKit.Bundles
         public Object[] Assets;
         public long[] LocalIds;
         public long[] LoadedIds;
+        public string[] dependencyNames;
         public Object[] References => Assets;
 
         public AssetsReferenceBundle[] dependencies;
