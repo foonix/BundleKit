@@ -33,6 +33,9 @@ namespace BundleKit.Utility
 
     public static class Extensions
     {
+        public const string unityBuiltinExtra = "Resources/unity_builtin_extra";
+        public const string unityDefaultResources = "Resources/unity default resources";
+
         public static UnityEngine.BuildCompression AsBuildCompression(this Compression compression)
         {
             switch (compression)
@@ -194,7 +197,7 @@ namespace BundleKit.Utility
                             visited.Add(assetId);
                             var ext = am.GetExtAsset(currentInst, fileId, pathId);
                             var name = ext.GetName(am);
-                            Update($"Collecting Dependencies", $"({(AssetClassID)ext.info.curFileType}) {name}", ((++p) % modVal) / modVal, false);
+                            Update(null, $"({(AssetClassID)ext.info.curFileType}) {name}", ((++p) % modVal) / modVal, false);
 
                             //we don't want to process monobehaviours as thats a project in itself
                             if (ext.info.curFileType == (int)AssetClassID.MonoBehaviour)

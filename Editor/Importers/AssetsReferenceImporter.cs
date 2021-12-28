@@ -9,11 +9,12 @@ using ThunderKit.Common.Package;
 using UnityEditor;
 using UnityEngine;
 using UnityEditor.Experimental.AssetImporters;
+using BundleKit.Utility;
 
 namespace BundleKit.Bundles
 {
     using static HideFlags;
-    [ScriptedImporter(14, new[] { Extension })]
+    [ScriptedImporter(15, new[] { Extension })]
     public class AssetsReferenceImporter : ScriptedImporter
     {
         public const string Extension = "assetsreference";
@@ -35,7 +36,7 @@ namespace BundleKit.Bundles
             var dependencies = new List<string>();
             foreach (var ffddName in filefileDepDepNames)
             {
-                if (ffddName == "Resources/unity default resources" || ffddName == "Resources/unity_builtin_extra")
+                if (ffddName == Extensions.unityBuiltinExtra || ffddName == Extensions.unityDefaultResources)
                     continue;
 
                 string depPath = $"Assets/{ffddName}";
@@ -46,7 +47,7 @@ namespace BundleKit.Bundles
 
             var bundleName = Path.GetFileName(ctx.assetPath);
             var bundle = AssetBundle.GetAllLoadedAssetBundles().FirstOrDefault(bnd => ctx.assetPath.Contains(bnd.name));
-            bundle?.Unload(false);
+            bundle?.Unload(true);
             try
             {
                 bundle = AssetBundle.LoadFromFile(ctx.assetPath);

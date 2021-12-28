@@ -1,6 +1,5 @@
 ﻿using AssetsTools.NET;
 using AssetsTools.NET.Extra;
-using BundleKit.Bundles;
 using BundleKit.Utility;
 using System;
 using System.Collections.Generic;
@@ -12,6 +11,7 @@ using ThunderKit.Common.Logging;
 using ThunderKit.Core.Data;
 using ThunderKit.Core.Pipelines;
 using UnityEditor;
+using UnityEditor.Build.Pipeline.Utilities;
 using UnityEngine;
 
 namespace BundleKit.PipelineJobs
@@ -23,8 +23,6 @@ namespace BundleKit.PipelineJobs
     [PipelineSupport(typeof(Pipeline))]
     public class CreateResourceBundle : PipelineJob
     {
-        const string unityBuiltinExtra = "Resources/unity_builtin_extra";
-        const string unityDefaultResources = "Resources/unity default resources";
 
         [Serializable]
         public struct Filter
@@ -87,6 +85,7 @@ namespace BundleKit.PipelineJobs
 
                     var visited = new HashSet<AssetID>();
 
+                    Log($"Collecting Dependencies");
                     IEnumerable<Assets.AssetData> collected = targetFiles.SelectMany(p =>
                             filters.SelectMany(filter =>
                             {
@@ -109,13 +108,13 @@ namespace BundleKit.PipelineJobs
                         var assetsFileInst = assets.First().AssetExt.file;
                         var outputPath = Path.Combine(outputDirectory, fileName);
 
-                        Log($"Constructing Bundle: {fileName}");
+                        Log($"Constructing Bundle: {assetGroup.Key}");
                         am.PrepareNewBundle(templateBundlePath, out var bun, out var bundleAssetsFile, out var assetBundleExtAsset);
 
                         // Update bundle assets name and bundle name to the name specified in outputAssetBundlePath
                         var bundleBaseField = assetBundleExtAsset.instance.GetBaseField();
-                        bundleBaseField.SetValue("m_Name", fileName);
-                        bundleBaseField.SetValue("m_AssetBundleName", fileName);
+                        bundleBaseField.SetValue("m_Name", Path.GetFileNameWithoutExtension(fileName));
+                        bundleBaseField.SetValue("m_AssetBundleName", Path.GetFileNameWithoutExtension(fileName));
                         //bundleAssetsFile.file.typeTree = assetsFileInst.file.typeTree;
 
                         bundleAssetsFile.file.dependencies.dependencies.Clear();
@@ -124,7 +123,7 @@ namespace BundleKit.PipelineJobs
 
                         UpdateAssetBundleDependencies(bundleBaseField, bundleAssetsFile.file.dependencies.dependencies);
 
-                        Log($"Updating {fileName} Container Array");
+                        Log($"Updating {assetGroup.Key} Container Array");
                         // Get container for populating asset listings
                         var containerArray = bundleBaseField.GetField("m_Container/Array");
                         foreach (var (asset, assetName, assetFileName, fileId, pathId, depth) in assets)
@@ -198,10 +197,11 @@ namespace BundleKit.PipelineJobs
                             // Create entry in m_Container to make this asset visible in the API, otherwise said the asset can be found with AssetBundles.LoadAsset* methods
                             newContainerChildren.Add(containerArray.CreateEntry(assetName, fileId, pathId));
                         }
-
                         containerArray.SetChildrenList(newContainerChildren.ToArray());
 
-                        bundleBaseField.GetField("m_PreloadTable/Array").SetChildrenList(Array.Empty<AssetTypeValueField>());
+                        Log($"Collecting PreloadTable Data");
+                        var preloadTable = bundleBaseField.GetField("m_PreloadTable/Array");
+                        assetsFileInst.UpdatePreloadTable(am, preloadTable, newContainerChildren, new HashSet<AssetID>(), Log);
 
                         Log($"Writing {fileName} AssetBundle Asset field");
                         //Save changes for building new bundle file
@@ -223,11 +223,14 @@ namespace BundleKit.PipelineJobs
                         foreach (var replacer in assetsReplacers)
                             replacer.Dispose();
 
+                        var cabName = $"cab-{HashingMethods.Calculate<MD4>(fileName)}";
+                        var assetsFileName = $"archive:/{cabName}/{cabName}";
+
                         using (var file = File.OpenWrite(outputPath))
                         using (var writer = new AssetsFileWriter(file))
                             bun.file.Write(writer, new List<BundleReplacer>
                             {
-                                new BundleReplacerFromMemory(bundleAssetsFile.name, fileName, true, newAssetData, newAssetData.Length),
+                                new BundleReplacerFromMemory(bundleAssetsFile.name, assetsFileName, true, newAssetData, newAssetData.Length),
                             });
                     }
 
@@ -241,7 +244,6 @@ namespace BundleKit.PipelineJobs
                     am.UnloadAll(true);
                 }
 
-            AssetDatabase.Refresh();
             return Task.CompletedTask;
         }
 
