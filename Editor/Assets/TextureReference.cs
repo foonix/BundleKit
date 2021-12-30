@@ -4,7 +4,7 @@ using UnityEngine;
 namespace BundleKit.Assets
 {
     [Serializable]
-    struct TextureReference
+    public struct TextureReference
     {
         public long localId;
         public string guid;

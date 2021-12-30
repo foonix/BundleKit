@@ -6,7 +6,7 @@ using static UnityEditor.ShaderUtil;
 namespace BundleKit.Assets
 {
     [Serializable]
-    struct SerializableShaderProperty
+    public struct SerializableShaderProperty
     {
         public string name;
         public float floatValue;

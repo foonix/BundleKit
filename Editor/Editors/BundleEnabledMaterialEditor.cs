@@ -1,12 +1,11 @@
 ﻿using BundleKit.Assets;
 using BundleKit.Bundles;
-using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using ThunderKit.Common.Package;
 using UnityEditor;
 using UnityEngine;
+using static UnityEditor.EditorGUI;
 
 namespace BundleKit.Editors
 {
@@ -15,7 +14,15 @@ namespace BundleKit.Editors
     {
         protected override void OnHeaderGUI()
         {
-            var mainAsset = AssetDatabase.LoadMainAssetAtPath(AssetDatabase.GetAssetPath(target));
+            string assetPath = AssetDatabase.GetAssetPath(target);
+            var importer = AssetImporter.GetAtPath(assetPath);
+            if (importer is SerializableMaterialDataImporter smdi)
+            {
+                using (new DisabledScope(false))
+                    base.OnHeaderGUI();
+                return;
+            }
+            var mainAsset = AssetDatabase.LoadMainAssetAtPath(assetPath);
             if (mainAsset is AssetsReferenceBundle arb)
             {
                 if (arb.CustomMaterials.Contains(target))
@@ -26,11 +33,13 @@ namespace BundleKit.Editors
                     return;
                 }
             }
+
             base.OnHeaderGUI();
         }
         public override void OnInspectorGUI()
         {
-            var mainAsset = AssetDatabase.LoadMainAssetAtPath(AssetDatabase.GetAssetPath(target));
+            string assetPath = AssetDatabase.GetAssetPath(target);
+            var mainAsset = AssetDatabase.LoadMainAssetAtPath(assetPath);
             var arb = mainAsset as AssetsReferenceBundle;
             if (arb)
             {
@@ -39,7 +48,20 @@ namespace BundleKit.Editors
                     target.hideFlags = HideFlags.None;
                 }
             }
+            var smdi = AssetImporter.GetAtPath(assetPath) as SerializableMaterialDataImporter;
+            if (smdi)
+            {
+                target.hideFlags = HideFlags.None;
+            }
             base.OnInspectorGUI();
+            if (smdi)
+            {
+                var material = target as Material;
+                var smd = JsonUtility.FromJson<SerializableMaterialData>(File.ReadAllText(assetPath));
+                var shaderData = SerializableMaterialData.Build(material, smd.identity);
+                var jsonData = JsonUtility.ToJson(shaderData, true);
+                File.WriteAllText(assetPath, jsonData);
+            }
             if (arb)
             {
                 if (arb.CustomMaterials.Contains(target))
