@@ -156,7 +156,7 @@ namespace BundleKit.PipelineJobs
                         {
                             var (asset, assetName, assetFileName, fileId, pathId, depth) = assetData;
                             var tree = asset.file.GetHierarchy(am, 0, pathId);
-                            var tableData = tree.Flatten().ToArray();
+                            var tableData = tree.Flatten().Distinct().ToArray();
                             foreach (var data in tableData)
                             {
                                 var entry = ValueBuilder.DefaultValueFieldFromArrayTemplate(preloadTableArray);

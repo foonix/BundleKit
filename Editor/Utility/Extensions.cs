@@ -221,12 +221,23 @@ namespace BundleKit.Utility
 
         }
 
-        public struct AssetTree
+        public struct AssetTree : IEquatable<AssetTree>
         {
             public AssetsFileInstance assetsFileInstance;
             public int FileId;
             public long PathId;
             public List<AssetTree> Children;
+
+            public override bool Equals(object obj)
+            {
+                return obj is AssetTree tree && Equals(tree);
+            }
+
+            public bool Equals(AssetTree other)
+            {
+                return FileId == other.FileId &&
+                       PathId == other.PathId;
+            }
 
             public IEnumerable<(int fileId, long pathId)> Flatten()
             {
@@ -234,6 +245,24 @@ namespace BundleKit.Utility
                 foreach (var child in Children)
                     foreach (var result in child.Flatten())
                         yield return result;
+            }
+
+            public override int GetHashCode()
+            {
+                int hashCode = 1318154825;
+                hashCode = hashCode * -1521134295 + FileId.GetHashCode();
+                hashCode = hashCode * -1521134295 + PathId.GetHashCode();
+                return hashCode;
+            }
+
+            public static bool operator ==(AssetTree left, AssetTree right)
+            {
+                return left.Equals(right);
+            }
+
+            public static bool operator !=(AssetTree left, AssetTree right)
+            {
+                return !(left == right);
             }
         }
 
