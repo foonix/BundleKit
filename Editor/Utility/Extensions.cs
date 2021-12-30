@@ -187,11 +187,16 @@ namespace BundleKit.Utility
                         //is a pptr
                         if (typeName.StartsWith("PPtr<") && typeName.EndsWith(">"))
                         {
-                            var fileId = child.Get("m_FileID").GetValue().AsInt();
                             var pathId = child.Get("m_PathID").GetValue().AsInt64();
+                            if (pathId == 0)
+                                continue;
+
+                            var fileId = child.Get("m_FileID").GetValue().AsInt();
+                            if (!crossFiles && fileId > 0)
+                                continue;
 
                             var assetId = currentInst.ConvertToAssetID(fileId, pathId);
-                            if ((!crossFiles && fileId > 0) || pathId == 0 || assetId == null || visited.Contains(assetId))
+                            if (assetId == null || visited.Contains(assetId))
                                 continue;
 
                             visited.Add(assetId);
@@ -203,8 +208,7 @@ namespace BundleKit.Utility
                             if (ext.info.curFileType == (int)AssetClassID.MonoBehaviour)
                                 continue;
 
-
-                            yield return (ext, name, ext.file.name, fileId, pathId, depth);
+                            yield return (ext, name, ext.file.name, 0, pathId, depth);
 
                             fieldStack.Push((ext.file, ext.instance.GetBaseField(), depth + 1));
                         }
@@ -215,6 +219,76 @@ namespace BundleKit.Utility
                 }
             }
 
+        }
+
+        public struct AssetTree
+        {
+            public AssetsFileInstance assetsFileInstance;
+            public int FileId;
+            public long PathId;
+            public List<AssetTree> Children;
+
+            public IEnumerable<(int fileId, long pathId)> Flatten()
+            {
+                yield return (FileId, PathId);
+                foreach (var child in Children)
+                    foreach (var result in child.Flatten())
+                        yield return result;
+            }
+        }
+
+        public static AssetTree GetHierarchy(this AssetsFileInstance inst, AssetsManager am, int fileId, long pathId)
+        {
+            var fieldStack = new Stack<(AssetsFileInstance file, AssetTypeValueField field, AssetTree node)>();
+            var root = new AssetTree { FileId = fileId, PathId = pathId, Children = new List<AssetTree>() };
+            var baseAsset = am.GetExtAsset(inst, fileId, pathId);
+            var instance = baseAsset.instance;
+            
+            var baseField = instance.GetBaseField();
+            var first = (inst, baseField, root);
+            fieldStack.Push(first);
+
+            while (fieldStack.Any())
+            {
+                var current = fieldStack.Pop();
+                foreach (var child in current.field.children)
+                {
+                    //not a value (ie not an int)
+                    if (!child.templateField.hasValue)
+                    {
+                        //not array of values either
+                        if (child.templateField.isArray && child.templateField.children[1].valueType != EnumValueTypes.ValueType_None)
+                            continue;
+
+                        string typeName = child.templateField.type;
+                        //is a pptr
+                        if (typeName.StartsWith("PPtr<") && typeName.EndsWith(">"))
+                        {
+                            var pathIdRef = child.Get("m_PathID").GetValue().AsInt64();
+                            if (pathIdRef == 0)
+                                continue;
+
+                            var fileIdRef = child.Get("m_FileID").GetValue().AsInt();
+                            var ext = am.GetExtAsset(current.file, fileIdRef, pathIdRef);
+
+                            //we don't want to process monobehaviours as thats a project in itself
+                            if (ext.info.curFileType == (int)AssetClassID.MonoBehaviour)
+                                continue;
+
+                            var node = new AssetTree { assetsFileInstance = ext.file, FileId = fileIdRef, PathId = pathIdRef, Children = new List<AssetTree>() };
+                            current.node.Children.Add(node);
+
+                            if (fileId == 0 && inst == ext.file)
+                                fieldStack.Push((ext.file, ext.instance.GetBaseField(), node));
+                        }
+                        else
+                            //recurse through dependencies
+                            fieldStack.Push((current.file, child, current.node));
+                    }
+                }
+            }
+
+            return first.root;
         }
 
         public static string GetName(this AssetExternal asset, AssetsManager am)

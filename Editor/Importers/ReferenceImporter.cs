@@ -38,6 +38,7 @@ namespace BundleKit.Bundles
                 bundles.Add(AssetBundle.LoadFromFile(bundlePath));
             }
 
+            List<Object> assets = new List<Object>();
             var textureLookup = new Dictionary<(string, long), Texture>();
             foreach (var bun in bundles)
             {
@@ -47,6 +48,7 @@ namespace BundleKit.Bundles
                 for (int i = 0; i < allAssets.Length; i++)
                 {
                     var asset = allAssets[i];
+                    assets.Add(asset);
                     var foundInfo = AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out string guid, out long localId);
                     if (asset is Shader shader)
                     {
@@ -63,6 +65,7 @@ namespace BundleKit.Bundles
                     ctx.AddObjectToAsset(identifier, asset);
                 }
             }
+            reference.Assets = assets.ToArray();
         }
     }
 }

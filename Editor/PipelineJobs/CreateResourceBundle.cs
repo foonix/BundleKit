@@ -1,5 +1,6 @@
 ﻿using AssetsTools.NET;
 using AssetsTools.NET.Extra;
+using BundleKit.Assets;
 using BundleKit.Utility;
 using System;
 using System.Collections.Generic;
@@ -67,16 +68,23 @@ namespace BundleKit.PipelineJobs
                     var dataDirectoryPath = Path.Combine(settings.GamePath, $"{gameName}_Data");
 
                     var sharedAssetsFiles = Directory.EnumerateFiles(dataDirectoryPath, "sharedassets*.assets").ToArray();
+                    var levelFiles = Directory.EnumerateFiles(dataDirectoryPath, "level*").Where(file => Path.GetExtension(file) == string.Empty).ToArray();
                     var resourcesFilePath = Path.Combine(dataDirectoryPath, "resources.assets");
-                    var ggmPath = Path.Combine(dataDirectoryPath, "globalgamemanagers.assets");
+                    var ggmAssetsPath = Path.Combine(dataDirectoryPath, "globalgamemanagers.assets");
+                    var ggmPath = Path.Combine(dataDirectoryPath, "globalgamemanagers");
 
-                    var targetFiles = sharedAssetsFiles.Prepend(resourcesFilePath).Prepend(ggmPath).ToArray();
+                    var targetFiles = Enumerable.Empty<string>()
+                        .Concat(sharedAssetsFiles)
+                        .Prepend(resourcesFilePath)
+                        .Prepend(ggmAssetsPath)
+                        .ToArray();
 
                     var templateBundlePath = AssetDatabase.GetAssetPath(bundle);
 
                     var contexts = new List<string>();
                     var assetsReplacers = new List<AssetsReplacer>();
                     var newContainerChildren = new List<AssetTypeValueField>();
+                    var preloadTableChildren = new List<AssetTypeValueField>();
 
                     //load data for classes
                     var classDataPath = Path.Combine("Packages", "com.passivepicasso.bundlekit", "Library", "classdata.tpk");
@@ -99,37 +107,66 @@ namespace BundleKit.PipelineJobs
                     var bundles = new HashSet<BundleFileInstance>();
                     foreach (var assetGroup in assetsByFile)
                     {
+                        preloadTableChildren.Clear();
                         newContainerChildren.Clear();
                         assetsReplacers.Clear();
                         var groupArray = assetGroup.ToArray();
                         var dupeGroups = groupArray.GroupBy(data => data.PathId).ToArray();
                         var assets = dupeGroups.Select(group => group.First()).ToList();
-                        string fileName = $"{assetGroup.Key}reference";
+                        string name = Path.GetFileNameWithoutExtension(assetGroup.Key);
                         var assetsFileInst = assets.First().AssetExt.file;
-                        var outputPath = Path.Combine(outputDirectory, fileName);
+                        var outputPath = Path.Combine(outputDirectory, name);
 
                         Log($"Constructing Bundle: {assetGroup.Key}");
                         am.PrepareNewBundle(templateBundlePath, out var bun, out var bundleAssetsFile, out var assetBundleExtAsset);
 
                         // Update bundle assets name and bundle name to the name specified in outputAssetBundlePath
                         var bundleBaseField = assetBundleExtAsset.instance.GetBaseField();
-                        bundleBaseField.SetValue("m_Name", Path.GetFileNameWithoutExtension(fileName));
-                        bundleBaseField.SetValue("m_AssetBundleName", Path.GetFileNameWithoutExtension(fileName));
-                        //bundleAssetsFile.file.typeTree = assetsFileInst.file.typeTree;
+                        bundleBaseField.SetValue("m_Name", name);
+                        bundleBaseField.SetValue("m_AssetBundleName", name);
 
                         bundleAssetsFile.file.dependencies.dependencies.Clear();
                         foreach (var dependency in assetsFileInst.file.dependencies.dependencies)
                             bundleAssetsFile.AddDependency(dependency);
 
-                        UpdateAssetBundleDependencies(bundleBaseField, bundleAssetsFile.file.dependencies.dependencies);
+                        var dependencyArray = bundleBaseField.GetField("m_Dependencies/Array");
+                        var dependencyFieldChildren = new List<AssetTypeValueField>();
+
+                        var dependencies = assetsFileInst.file.dependencies.dependencies;
+                        foreach (var dep in dependencies)
+                        {
+                            var depTemplate = ValueBuilder.DefaultValueFieldFromArrayTemplate(dependencyArray);
+                            var path = dep.assetPath;
+                            if (path != Extensions.unityBuiltinExtra && path != Extensions.unityDefaultResources)
+                            {
+                                path = Path.GetFileNameWithoutExtension(dep.assetPath);
+                            }
+
+                            depTemplate.GetValue().Set(path);
+                            dependencyFieldChildren.Add(depTemplate);
+                        }
+                        dependencyArray.SetChildrenList(dependencyFieldChildren.ToArray());
 
                         Log($"Updating {assetGroup.Key} Container Array");
                         // Get container for populating asset listings
+                        var preloadTableArray = bundleBaseField.GetField("m_PreloadTable/Array");
                         var containerArray = bundleBaseField.GetField("m_Container/Array");
-                        foreach (var (asset, assetName, assetFileName, fileId, pathId, depth) in assets)
+                        var preloadIndex = 0;
+                        foreach (var assetData in assets)
                         {
+                            var (asset, assetName, assetFileName, fileId, pathId, depth) = assetData;
+                            var tree = asset.file.GetHierarchy(am, 0, pathId);
+                            var tableData = tree.Flatten().ToArray();
+                            foreach (var data in tableData)
+                            {
+                                var entry = ValueBuilder.DefaultValueFieldFromArrayTemplate(preloadTableArray);
+                                entry.SetValue("m_FileID", data.fileId);
+                                entry.SetValue("m_PathID", data.pathId);
+                                preloadTableChildren.Add(entry);
+                            }
+
                             var baseField = asset.instance.GetBaseField();
-                            Log($"Import {assetName} ({baseField.GetFieldType()})", "Import");
+                            Log($"Import {assetName} ({baseField.GetFieldType()})");
 
                             var streamDatas = baseField.FindField("m_StreamData").ToArray();
                             if (streamDatas.Any())
@@ -195,15 +232,14 @@ namespace BundleKit.PipelineJobs
                             assetsReplacers.Add(currentAssetReplacer);
 
                             // Create entry in m_Container to make this asset visible in the API, otherwise said the asset can be found with AssetBundles.LoadAsset* methods
-                            newContainerChildren.Add(containerArray.CreateEntry(assetName, fileId, pathId));
+                            newContainerChildren.Add(containerArray.CreateEntry(assetName, 0, pathId, preloadIndex, tableData.Length));
+
+                            preloadIndex += tableData.Length;
                         }
                         containerArray.SetChildrenList(newContainerChildren.ToArray());
+                        preloadTableArray.SetChildrenList(preloadTableChildren.ToArray());
 
-                        Log($"Collecting PreloadTable Data");
-                        var preloadTable = bundleBaseField.GetField("m_PreloadTable/Array");
-                        assetsFileInst.UpdatePreloadTable(am, preloadTable, newContainerChildren, new HashSet<AssetID>(), Log);
-
-                        Log($"Writing {fileName} AssetBundle Asset field");
+                        Log($"Writing {name} AssetBundle Asset field");
                         //Save changes for building new bundle file
                         var newAssetBundleBytes = bundleBaseField.WriteToByteArray();
                         assetsReplacers.Add(new AssetsReplacerFromMemory(0, assetBundleExtAsset.info.index, (int)assetBundleExtAsset.info.curFileType, 0xFFFF, newAssetBundleBytes));
@@ -211,7 +247,7 @@ namespace BundleKit.PipelineJobs
 
                         if (File.Exists(outputPath)) File.Delete(outputPath);
 
-                        Log($"Writing {fileName}");
+                        Log($"Writing {name}");
                         byte[] newAssetData;
                         using (var bundleStream = new MemoryStream())
                         using (var writer = new AssetsFileWriter(bundleStream))
@@ -223,7 +259,7 @@ namespace BundleKit.PipelineJobs
                         foreach (var replacer in assetsReplacers)
                             replacer.Dispose();
 
-                        var cabName = $"cab-{HashingMethods.Calculate<MD4>(fileName)}";
+                        var cabName = $"CAB-{HashingMethods.Calculate<MD4>(name)}";
                         var assetsFileName = $"archive:/{cabName}/{cabName}";
 
                         using (var file = File.OpenWrite(outputPath))
@@ -236,6 +272,13 @@ namespace BundleKit.PipelineJobs
 
                     foreach (var stream in streamReaders)
                         stream.Value.Dispose();
+
+                    var bundleNames = assetsByFile.Select(grp => Path.GetFileNameWithoutExtension(grp.Key)).ToArray();
+                    var reference = ScriptableObject.CreateInstance<Reference>();
+                    reference.AssetBundles = bundleNames;
+                    var referencePath = Path.Combine(outputDirectory, $"{Path.GetFileNameWithoutExtension(settings.GamePath)}.reference");
+                    File.WriteAllText(referencePath, JsonUtility.ToJson(reference));
+                    DestroyImmediate(reference);
 
                     Log($"Finished Building Bundle", context: contexts.ToArray());
                 }

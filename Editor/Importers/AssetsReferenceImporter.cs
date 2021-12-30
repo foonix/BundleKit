@@ -30,23 +30,26 @@ namespace BundleKit.Bundles
 
             am.PrepareNewBundle(ctx.assetPath, out var bun, out var bundleAssetsFile, out var assetBundleExtAsset);
 
-            var filefileDepDeps = assetBundleExtAsset.file.file.dependencies.dependencies;
-            var filefileDepDepNames = filefileDepDeps.Select(inst => inst.assetPath).ToArray();
+            var bundleBaseField = assetBundleExtAsset.instance.GetBaseField();
+            var dependencyArray = bundleBaseField.GetField("m_Dependencies/Array");
+            var dependencies = dependencyArray.GetChildrenList().Select(dep => dep.GetValue().AsString()).ToArray();
+            var bundleName = bundleBaseField.GetValue("m_AssetBundleName").AsString();
+
             am.UnloadAll();
-            var dependencies = new List<string>();
-            foreach (var ffddName in filefileDepDepNames)
+            for (int i = 0; i < dependencies.Length; i++)
             {
-                if (ffddName == Extensions.unityBuiltinExtra || ffddName == Extensions.unityDefaultResources)
+                var dependency = dependencies[i];
+                if (dependency == Extensions.unityBuiltinExtra || dependency == Extensions.unityDefaultResources)
                     continue;
 
-                string depPath = $"Assets/{ffddName}";
-                dependencies.Add(depPath);
-                ctx.DependsOnSourceAsset(depPath);
+                dependency = Path.Combine(Path.GetDirectoryName(ctx.assetPath), dependency).Replace("\\", "/");
+                ctx.DependsOnSourceAsset(dependency);
+                dependencies[i] = dependency;
             }
             var dependencyReferences = dependencies.Select(AssetDatabase.LoadAssetAtPath<AssetsReferenceBundle>).Where(arb => arb != null).ToArray();
 
-            var bundleName = Path.GetFileName(ctx.assetPath);
-            var bundle = AssetBundle.GetAllLoadedAssetBundles().FirstOrDefault(bnd => ctx.assetPath.Contains(bnd.name));
+            var loadedBundles = AssetBundle.GetAllLoadedAssetBundles();
+            var bundle = loadedBundles.FirstOrDefault(bnd => bundleName.Equals(bnd.name));
             bundle?.Unload(true);
             try
             {

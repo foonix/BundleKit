@@ -78,7 +78,7 @@ namespace BundleKit.PipelineJobs
             var fixedPath = assetsFilePath;
             if (assetsFilePath != Extensions.unityBuiltinExtra && assetsFilePath != Extensions.unityDefaultResources)
             {
-                fixedPath = $"{assetsFilePath}reference";
+                fixedPath = Path.GetFileNameWithoutExtension(assetsFilePath);
                 var cabName = $"cab-{HashingMethods.Calculate<MD4>(fixedPath)}";
                 fixedPath = $"archive:/{cabName}/{cabName}";
             }
@@ -109,37 +109,6 @@ namespace BundleKit.PipelineJobs
                 dependencyFieldChildren.Add(depTemplate);
             }
             dependencyArray.SetChildrenList(dependencyFieldChildren.ToArray());
-        }
-        public static void UpdatePreloadTable(this AssetsFileInstance assetsFileInst, AssetsManager am, AssetTypeValueField preloadTableArray, List<AssetTypeValueField> containerArray, HashSet<AssetID> visited, UpdateLog log)
-        {
-            var children = new List<AssetTypeValueField>();
-            var count = assetsFileInst.file.dependencies.dependencyCount + 1;
-            int preloadIndex = 0;
-            // Setup preload table
-            foreach (var assetIndexField in containerArray)
-            {
-                var name = assetIndexField.GetValue("first").AsString();
-                long pathId = assetIndexField.GetValue("second/asset/m_PathID").AsInt64();
-                if (pathId == 0) continue;
-                var assetExt = am.GetExtAsset(assetsFileInst, 0, pathId);
-                var baseField = assetExt.instance.GetBaseField();
-
-                int size = 0;
-                foreach (var dependency in assetExt.file.GetDependentAssetIds(visited, baseField, am, log, true))
-                {
-                    var entry = ValueBuilder.DefaultValueFieldFromArrayTemplate(preloadTableArray);
-                    entry.SetValue("m_FileID", dependency.FileId);
-                    entry.SetValue("m_PathID", dependency.PathId);
-                    children.Add(entry);
-                    size++;
-                }
-                assetIndexField.SetValue("second/preloadIndex", preloadIndex);
-                assetIndexField.SetValue("second/preloadSize", size);
-                preloadIndex += size;
-
-            }
-            if (children.Any())
-                preloadTableArray.SetChildrenList(children.ToArray());
         }
     }
 }

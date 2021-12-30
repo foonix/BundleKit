@@ -1,4 +1,8 @@
-﻿using System.Linq;
+﻿using AssetsTools.NET.Extra;
+using BundleKit.PipelineJobs;
+using BundleKit.Utility;
+using System.IO;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -22,8 +26,23 @@ namespace BundleKit.Bundles
         {
             if (!EditorUtility.IsPersistent(this)) return;
             var path = AssetDatabase.GetAssetPath(this);
+
+            var am = new AssetsManager();
+            var classDataPath = Path.Combine("Packages", "com.passivepicasso.bundlekit", "Library", "classdata.tpk");
+            am.LoadClassPackage(classDataPath);
+            am.LoadClassDatabaseFromPackage(Application.unityVersion);
+
+            am.PrepareNewBundle(path, out var bun, out var bundleAssetsFile, out var assetBundleExtAsset);
+
+            var bundleBaseField = assetBundleExtAsset.instance.GetBaseField();
+            var dependencyArray = bundleBaseField.GetField("m_Dependencies/Array");
+            var dependencies = dependencyArray.GetChildrenList().Select(dep => dep.GetValue().AsString()).ToArray();
+            var bundleName = bundleBaseField.GetValue("m_AssetBundleName").AsString();
+
+            am.UnloadAll();
+
             var allBundles = AssetBundle.GetAllLoadedAssetBundles().ToArray();
-            bundle = allBundles.FirstOrDefault(bnd => bnd.name.Contains(name));
+            bundle = allBundles.FirstOrDefault(bnd => bnd.name.Equals(bundleName));
             if (!bundle)
                 bundle = AssetBundle.LoadFromFile(path);
 
