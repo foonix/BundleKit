@@ -5,6 +5,8 @@ using BundleKit.Building;
 using BundleKit.PipelineJobs;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using UnityEditor.Build.Content;
@@ -52,6 +54,27 @@ namespace BundleKit.Utility
         }
         public static bool IsNullOrEmpty<T>(this ICollection<T> collection) => collection == null || collection.Count == 0;
 
+
+        public static IEnumerable<AssetTypeValueField> FindFieldType(this AssetTypeValueField valueField, Predicate<string> typeMatch)
+        {
+            var fieldStack = new Stack<AssetTypeValueField>();
+            AssetTypeValueField field = null;
+            fieldStack.Push(valueField);
+            while (fieldStack.Any())
+            {
+                field = fieldStack.Pop();
+                if (field.childrenCount > 0)
+                {
+                    string typeName = field.templateField.type;
+                    if (typeMatch(typeName))
+                    {
+                        yield return field;
+                    }
+                    foreach (var child in field.children)
+                        fieldStack.Push(child);
+                }
+            }
+        }
         public static IEnumerable<AssetTypeValueField> FindField(this AssetTypeValueField valueField, string fieldPath)
         {
             var fieldStack = new Stack<AssetTypeValueField>();
@@ -124,6 +147,7 @@ namespace BundleKit.Utility
             }
 
         }
+
 
         public static AssetTypeValueField CreateEntry(this AssetTypeValueField containerArray, string name, int fileId, long pathId, int preloadIndex = 0, int preloadSize = 0)
         {
@@ -221,12 +245,31 @@ namespace BundleKit.Utility
 
         }
 
+        [DebuggerDisplay("{assetsFileInstance.name}/{name} fid:{FileId} pid:{PathId} children: {Children.Count}")]
         public struct AssetTree : IEquatable<AssetTree>
         {
-            public AssetsFileInstance assetsFileInstance;
+            public string name;
+            public AssetExternal assetExternal;
             public int FileId;
             public long PathId;
             public List<AssetTree> Children;
+
+            public IEnumerable<(int fileId, long pathId)> FlattenIds(bool enterDependencies)
+            {
+                yield return (FileId, PathId);
+                foreach (var child in Children)
+                    if (enterDependencies || child.FileId == 0)
+                        foreach (var result in child.FlattenIds(enterDependencies))
+                            yield return result;
+            }
+            public IEnumerable<AssetTree> Flatten(bool enterDependencies)
+            {
+                yield return this;
+                foreach (var child in Children)
+                    if (enterDependencies || child.FileId == 0)
+                        foreach (var result in child.Flatten(enterDependencies))
+                            yield return result;
+            }
 
             public override bool Equals(object obj)
             {
@@ -235,22 +278,14 @@ namespace BundleKit.Utility
 
             public bool Equals(AssetTree other)
             {
-                return FileId == other.FileId &&
+                return EqualityComparer<AssetsFileInstance>.Default.Equals(assetExternal.file, other.assetExternal.file) &&
                        PathId == other.PathId;
-            }
-
-            public IEnumerable<(int fileId, long pathId)> Flatten()
-            {
-                yield return (FileId, PathId);
-                foreach (var child in Children)
-                    foreach (var result in child.Flatten())
-                        yield return result;
             }
 
             public override int GetHashCode()
             {
-                int hashCode = 1318154825;
-                hashCode = hashCode * -1521134295 + FileId.GetHashCode();
+                int hashCode = -1120199924;
+                hashCode = hashCode * -1521134295 + EqualityComparer<AssetsFileInstance>.Default.GetHashCode(assetExternal.file);
                 hashCode = hashCode * -1521134295 + PathId.GetHashCode();
                 return hashCode;
             }
@@ -269,11 +304,18 @@ namespace BundleKit.Utility
         public static AssetTree GetHierarchy(this AssetsFileInstance inst, AssetsManager am, int fileId, long pathId)
         {
             var fieldStack = new Stack<(AssetsFileInstance file, AssetTypeValueField field, AssetTree node)>();
-            var root = new AssetTree { FileId = fileId, PathId = pathId, Children = new List<AssetTree>() };
             var baseAsset = am.GetExtAsset(inst, fileId, pathId);
-            var instance = baseAsset.instance;
-            
-            var baseField = instance.GetBaseField();
+            var baseField = baseAsset.instance.GetBaseField();
+
+            var root = new AssetTree
+            {
+                name = baseAsset.GetName(am),
+                assetExternal = baseAsset,
+                FileId = fileId,
+                PathId = pathId,
+                Children = new List<AssetTree>()
+            };
+
             var first = (inst, baseField, root);
             fieldStack.Push(first);
 
@@ -304,14 +346,20 @@ namespace BundleKit.Utility
                             if (ext.info.curFileType == (int)AssetClassID.MonoBehaviour)
                                 continue;
 
-                            var node = new AssetTree { assetsFileInstance = ext.file, FileId = fileIdRef, PathId = pathIdRef, Children = new List<AssetTree>() };
+                            var node = new AssetTree
+                            {
+                                name = ext.GetName(am),
+                                assetExternal = ext,
+                                FileId = fileIdRef,
+                                PathId = pathIdRef,
+                                Children = new List<AssetTree>()
+                            };
                             current.node.Children.Add(node);
 
-                            if (fileId == 0 && inst == ext.file)
-                                fieldStack.Push((ext.file, ext.instance.GetBaseField(), node));
+                            //recurse through dependencies
+                            fieldStack.Push((ext.file, ext.instance.GetBaseField(), node));
                         }
                         else
-                            //recurse through dependencies
                             fieldStack.Push((current.file, child, current.node));
                     }
                 }
@@ -320,6 +368,81 @@ namespace BundleKit.Utility
             return first.root;
         }
 
+        public static IEnumerable<AssetTree> CollectAssetTrees(this AssetsFileInstance assetsFileInst, AssetsManager am, Regex[] nameRegex, AssetClassID assetClass, UpdateLog Update)
+        {
+            // Iterate over all requested Class types and collect the data required to copy over the required asset information
+            // This step will recurse over dependencies so all required assets will become available from the resulting bundle
+            Update("Collecting Asset Trees", log: false);
+            var fileInfos = assetsFileInst.table.GetAssetsOfType((int)assetClass);
+            for (var x = 0; x < fileInfos.Count; x++)
+            {
+                var assetFileInfo = fileInfos[x];
+
+                var name = AssetHelper.GetAssetNameFast(assetsFileInst.file, am.classFile, assetFileInfo);
+                Update("Collecting Asset Trees", $"({assetClass}) {name}", log: true);
+
+                // If a name Regex filter is applied, and it does not match, continue
+                int i = 0;
+                for (; i < nameRegex.Length; i++)
+                    if (nameRegex[i] != null && nameRegex[i].IsMatch(name))
+                        break;
+                if (nameRegex.Length != 0 && i == nameRegex.Length) continue;
+
+                yield return assetsFileInst.GetHierarchy(am, 0, assetFileInfo.index);
+            }
+        }
+
+        public static void ImportStreamData(this AssetTypeValueField baseField, AssetTypeValueField streamData, Dictionary<string, Stream> streamReaders, string dataDirectoryPath, bool updatePath = false)
+        {
+            if (streamData?.children != null)
+            {
+
+                var path = streamData.Get("path");
+                var streamPath = path.GetValue().AsString();
+                var newPath = Path.Combine(dataDirectoryPath, streamPath);
+                var fixedNewPath = newPath/*.Replace("\\", "/")*/;
+                try
+                {
+                    if (updatePath) streamData.SetValue("path", fixedNewPath);
+                    else
+                    {
+                        var offset = streamData.GetValue("offset").AsInt64();
+                        var size = streamData.GetValue("size").AsInt();
+                        var data = new byte[size];
+
+                        Stream stream;
+                        if (streamReaders.ContainsKey(fixedNewPath))
+                            stream = streamReaders[fixedNewPath];
+                        else
+                            streamReaders[fixedNewPath] = stream = File.OpenRead(fixedNewPath);
+
+                        stream.Position = offset;
+                        stream.Read(data, 0, (int)size);
+
+                        if (data != null && data.Length > 0)
+                        {
+                            streamData.SetValue("offset", 0);
+                            streamData.SetValue("size", 0);
+                            streamData.SetValue("path", string.Empty);
+                            var image_data = baseField.GetField("image data");
+                            image_data.GetValue().type = EnumValueTypes.ByteArray;
+                            image_data.templateField.valueType = EnumValueTypes.ByteArray;
+                            var byteArray = new AssetTypeByteArray()
+                            {
+                                size = (uint)data.Length,
+                                data = data
+                            };
+                            image_data.GetValue().Set(byteArray);
+                            baseField.Get("m_CompleteImageSize").GetValue().Set(data.Length);
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    UnityEngine.Debug.LogError(e);
+                }
+            }
+        }
         public static string GetName(this AssetExternal asset, AssetsManager am)
         {
             switch ((AssetClassID)asset.info.curFileType)

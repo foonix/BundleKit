@@ -96,6 +96,19 @@ namespace BundleKit.PipelineJobs
             assetsFileInst.file.dependencies.dependencyCount = dependencies.Count;
             assetsFileInst.file.dependencies.dependencies = dependencies;
         }
+        public static void AddDependency(this AssetsFileInstance assetsFileInst, string dependency)
+        {
+            var dependencies = assetsFileInst.file.dependencies;
+
+            dependencies.dependencies.Add(new AssetsFileDependency
+            {
+                assetPath = dependency,
+                originalAssetPath = dependency,
+                bufferedPath = string.Empty
+            });
+
+            dependencies.dependencyCount = dependencies.dependencies.Count;
+        }
 
         public static void UpdateAssetBundleDependencies(AssetTypeValueField bundleBaseField, List<AssetsFileDependency> dependencies)
         {

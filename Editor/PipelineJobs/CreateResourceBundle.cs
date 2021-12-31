@@ -19,18 +19,18 @@ namespace BundleKit.PipelineJobs
 {
     using static AssetToolPipelineMethods;
 
+    [Serializable]
+    public struct Filter
+    {
+        public string[] nameRegex;
+        public AssetClassID assetClass;
+    }
+
     public delegate void UpdateLog(string title = null, string message = null, float progress = -1, bool log = true, params string[] context);
 
     [PipelineSupport(typeof(Pipeline))]
     public class CreateResourceBundle : PipelineJob
     {
-
-        [Serializable]
-        public struct Filter
-        {
-            public string[] nameRegex;
-            public AssetClassID assetClass;
-        }
 
         public DefaultAsset bundle;
         public string outputDirectory;
@@ -147,7 +147,7 @@ namespace BundleKit.PipelineJobs
                         }
                         dependencyArray.SetChildrenList(dependencyFieldChildren.ToArray());
 
-                        Log($"Updating {assetGroup.Key} Container Array");
+                        Log($"Updating {assetGroup.Key} Arrays");
                         // Get container for populating asset listings
                         var preloadTableArray = bundleBaseField.GetField("m_PreloadTable/Array");
                         var containerArray = bundleBaseField.GetField("m_Container/Array");
@@ -156,7 +156,7 @@ namespace BundleKit.PipelineJobs
                         {
                             var (asset, assetName, assetFileName, fileId, pathId, depth) = assetData;
                             var tree = asset.file.GetHierarchy(am, 0, pathId);
-                            var tableData = tree.Flatten().Distinct().ToArray();
+                            var tableData = tree.FlattenIds(false).Distinct().ToArray();
                             foreach (var data in tableData)
                             {
                                 var entry = ValueBuilder.DefaultValueFieldFromArrayTemplate(preloadTableArray);
@@ -166,65 +166,18 @@ namespace BundleKit.PipelineJobs
                             }
 
                             var baseField = asset.instance.GetBaseField();
-                            Log($"Import {assetName} ({baseField.GetFieldType()})");
+                            Log(message: $"Import {assetName} ({baseField.GetFieldType()})");
 
                             var streamDatas = baseField.FindField("m_StreamData").ToArray();
                             if (streamDatas.Any())
                             {
                                 Log(message: $"Import {assetName} ({baseField.GetFieldType()}) Stream Data");
                                 foreach (var streamData in streamDatas)
-                                    if (streamData?.children != null)
-                                    {
-
-                                        var path = streamData.Get("path");
-                                        var streamPath = path.GetValue().AsString();
-                                        var newPath = Path.Combine(dataDirectoryPath, streamPath);
-                                        var fixedNewPath = newPath.Replace("\\", "/");
-                                        var m_Width = baseField.Get("m_Width").GetValue().AsInt();
-                                        var m_Height = baseField.Get("m_Height").GetValue().AsInt();
-                                        var m_TextureFormat = (AssetsTools.NET.TextureFormat)baseField.Get("m_TextureFormat").GetValue().AsInt();
-
-                                        var offset = streamData.GetValue("offset").AsInt64();
-                                        var size = streamData.GetValue("size").AsInt();
-                                        var data = new byte[size];
-                                        try
-                                        {
-                                            Stream stream;
-                                            if (streamReaders.ContainsKey(fixedNewPath))
-                                                stream = streamReaders[fixedNewPath];
-                                            else
-                                                streamReaders[fixedNewPath] = stream = File.OpenRead(fixedNewPath);
-
-                                            stream.Position = offset;
-                                            stream.Read(data, 0, (int)size);
-                                            if (data != null && data.Length > 0)
-                                            {
-                                                streamData.SetValue("offset", 0);
-                                                streamData.SetValue("size", 0);
-                                                streamData.SetValue("path", string.Empty);
-                                                var image_data = baseField.GetField("image data");
-                                                image_data.GetValue().type = EnumValueTypes.ByteArray;
-                                                image_data.templateField.valueType = EnumValueTypes.ByteArray;
-                                                var byteArray = new AssetTypeByteArray()
-                                                {
-                                                    size = (uint)data.Length,
-                                                    data = data
-                                                };
-                                                image_data.GetValue().Set(byteArray);
-                                                baseField.Get("m_CompleteImageSize").GetValue().Set(data.Length);
-                                            }
-                                            else
-                                            {
-                                                streamData.SetValue("path", fixedNewPath);
-                                            }
-                                        }
-                                        catch (Exception e)
-                                        {
-                                            UnityEngine.Debug.LogError(e);
-                                        }
-                                    }
+                                    baseField.ImportStreamData(streamData, streamReaders, dataDirectoryPath);
 
                             }
+
+                            Log(message: $"Write {assetName} ({baseField.GetFieldType()})");
                             var otherBytes = asset.instance.WriteToByteArray();
                             var currentAssetReplacer = new AssetsReplacerFromMemory(0, pathId, (int)asset.info.curFileType,
                                                                                     AssetHelper.GetScriptIndex(asset.file.file, asset.info),
