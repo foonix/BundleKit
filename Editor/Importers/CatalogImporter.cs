@@ -10,6 +10,7 @@ using UnityEditor;
 using UnityEditor.Build.Pipeline.Utilities;
 using UnityEditor.Experimental.AssetImporters;
 using UnityEngine;
+using UnityEngine.Rendering;
 using Object = UnityEngine.Object;
 
 namespace BundleKit.Bundles
@@ -18,7 +19,8 @@ namespace BundleKit.Bundles
     public class CatalogImporter : ScriptedImporter
     {
         public const string Extension = "catalog";
-
+        public TextureDimension TextureDimension;
+        public string CubeName;
         public override void OnImportAsset(AssetImportContext ctx)
         {
             var am = new AssetsManager();
@@ -57,6 +59,7 @@ namespace BundleKit.Bundles
             var assets = new List<Object>();
             var textureLookup = new Dictionary<long, Texture>();
             var allAssets = bundle.LoadAllAssets();
+            var assetNames = bundle.GetAllAssetNames();
 
             for (int i = 0; i < allAssets.Length; i++)
             {
@@ -68,11 +71,12 @@ namespace BundleKit.Bundles
                     ShaderUtil.RegisterShader(shader);
                     continue;
                 }
-                
+
                 if (foundInfo && asset is Texture2D tex)
                     textureLookup[localId] = tex;
 
                 var identifier = HashingMethods.Calculate<MD4>(localId).ToString();
+
                 ctx.AddObjectToAsset(identifier, asset);
             }
 

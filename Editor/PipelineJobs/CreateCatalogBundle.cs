@@ -110,7 +110,7 @@ namespace BundleKit.PipelineJobs
                         //foreach (var pptr in pptrs)
                         //{
                         //    var assetId = asset.file.ConvertToAssetID(pptr.GetValue("m_FileID").AsInt(), pptr.GetValue("m_PathID").AsInt64());
-                            
+
                         //}
                         baseField.RemapPPtrs(remap);
 
@@ -123,14 +123,16 @@ namespace BundleKit.PipelineJobs
                             entry.SetValue("m_PathID", localIdMap[data]);
                             preloadChildren.Add(entry);
                         }
-
-                        var streamDatas = baseField.FindField("m_StreamData").ToArray();
-                        if (streamDatas.Any())
+                        switch (baseField.GetFieldType())
                         {
-                            Log(message: $"Import {assetTree.name} ({baseField.GetFieldType()}) Stream Data");
-                            foreach (var streamData in streamDatas)
-                                baseField.ImportStreamData(streamData, streamReaders, dataDirectoryPath);
+                            case "Texture2D":
+                            case "Cubemap":
+                                TextureFile texFile = TextureFile.ReadTextureFile(baseField);
+                                texFile.ImportTextureData(streamReaders, dataDirectoryPath);
+                                texFile.WriteTextureFile(baseField);
+                                break;
                         }
+
                         var assetBytes = asset.instance.WriteToByteArray();
                         var currentAssetReplacer = new AssetsReplacerFromMemory(0, localId, (int)asset.info.curFileType,
                                                                                 AssetHelper.GetScriptIndex(asset.file.file, asset.info),
@@ -180,6 +182,7 @@ namespace BundleKit.PipelineJobs
                 }
             return Task.CompletedTask;
         }
+
 
     }
 }

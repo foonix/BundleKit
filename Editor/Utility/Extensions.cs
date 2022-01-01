@@ -392,49 +392,43 @@ namespace BundleKit.Utility
             }
         }
 
-        public static void ImportStreamData(this AssetTypeValueField baseField, AssetTypeValueField streamData, Dictionary<string, Stream> streamReaders, string dataDirectoryPath, bool updatePath = false)
+        public static void ImportStreamData(this AssetTypeValueField baseField, AssetTypeValueField streamData, Dictionary<string, Stream> streamReaders, string dataDirectoryPath, int fileDataOffset = 0, int dirInfooffset = 0)
         {
             if (streamData?.children != null)
             {
-
                 var path = streamData.Get("path");
                 var streamPath = path.GetValue().AsString();
                 var newPath = Path.Combine(dataDirectoryPath, streamPath);
-                var fixedNewPath = newPath/*.Replace("\\", "/")*/;
+                var fixedNewPath = newPath.Replace("\\", "/");
                 try
                 {
-                    if (updatePath) streamData.SetValue("path", fixedNewPath);
+                    var offset = streamData.GetValue("offset").AsInt64();
+                    var size = streamData.GetValue("size").AsInt();
+                    var data = new byte[size];
+
+                    Stream stream;
+                    if (streamReaders.ContainsKey(fixedNewPath))
+                        stream = streamReaders[fixedNewPath];
                     else
+                        streamReaders[fixedNewPath] = stream = File.OpenRead(fixedNewPath);
+
+                    stream.Position = offset;
+                    stream.Read(data, 0, (int)size);
+
+                    if (data != null && data.Length > 0)
                     {
-                        var offset = streamData.GetValue("offset").AsInt64();
-                        var size = streamData.GetValue("size").AsInt();
-                        var data = new byte[size];
-
-                        Stream stream;
-                        if (streamReaders.ContainsKey(fixedNewPath))
-                            stream = streamReaders[fixedNewPath];
-                        else
-                            streamReaders[fixedNewPath] = stream = File.OpenRead(fixedNewPath);
-
-                        stream.Position = offset;
-                        stream.Read(data, 0, (int)size);
-
-                        if (data != null && data.Length > 0)
+                        streamData.SetValue("offset", 0);
+                        streamData.SetValue("size", 0);
+                        streamData.SetValue("path", string.Empty);
+                        var image_data = baseField.GetField("image data");
+                        image_data.GetValue().type = EnumValueTypes.ByteArray;
+                        image_data.templateField.valueType = EnumValueTypes.ByteArray;
+                        var byteArray = new AssetTypeByteArray()
                         {
-                            streamData.SetValue("offset", 0);
-                            streamData.SetValue("size", 0);
-                            streamData.SetValue("path", string.Empty);
-                            var image_data = baseField.GetField("image data");
-                            image_data.GetValue().type = EnumValueTypes.ByteArray;
-                            image_data.templateField.valueType = EnumValueTypes.ByteArray;
-                            var byteArray = new AssetTypeByteArray()
-                            {
-                                size = (uint)data.Length,
-                                data = data
-                            };
-                            image_data.GetValue().Set(byteArray);
-                            baseField.Get("m_CompleteImageSize").GetValue().Set(data.Length);
-                        }
+                            size = (uint)data.Length,
+                            data = data
+                        };
+                        image_data.GetValue().Set(byteArray);
                     }
                 }
                 catch (Exception e)
@@ -443,6 +437,82 @@ namespace BundleKit.Utility
                 }
             }
         }
+
+        public static void ImportTextureData(this TextureFile texFile, Dictionary<string, Stream> streamReaders, string dataDirectoryPath)
+        {
+            var streamPath = texFile.m_StreamData.path;
+            var newPath = Path.Combine(dataDirectoryPath, streamPath);
+            var fixedNewPath = newPath.Replace("\\", "/");
+            try
+            {
+                var offset = texFile.m_StreamData.offset;
+                var size = texFile.m_StreamData.size;
+
+                Stream stream;
+                if (streamReaders.ContainsKey(fixedNewPath))
+                    stream = streamReaders[fixedNewPath];
+                else
+                    streamReaders[fixedNewPath] = stream = File.OpenRead(fixedNewPath);
+
+                texFile.pictureData = new byte[texFile.m_StreamData.size];
+                stream.Position = (long)texFile.m_StreamData.offset;
+                stream.Read(texFile.pictureData, 0, (int)texFile.m_StreamData.size);
+
+                texFile.m_StreamData.offset = 0;
+                texFile.m_StreamData.size = 0;
+                texFile.m_StreamData.path = string.Empty;
+            }
+            catch (Exception e)
+            {
+                UnityEngine.Debug.LogError(e);
+            }
+        }
+
+        public static void WriteTextureFile(this TextureFile textureFile, AssetTypeValueField baseField)
+        {
+            if (!baseField.GetField("m_Name").IsDummy()) baseField.SetValue("m_Name", textureFile.m_Name);
+            if (!baseField.GetField("m_ForcedFallbackFormat").IsDummy()) baseField.SetValue("m_ForcedFallbackFormat", textureFile.m_ForcedFallbackFormat);
+            if (!baseField.GetField("m_DownscaleFallback").IsDummy()) baseField.SetValue("m_DownscaleFallback", textureFile.m_DownscaleFallback);
+            if (!baseField.GetField("m_DownscaleFallback").IsDummy()) baseField.SetValue("m_DownscaleFallback", textureFile.m_DownscaleFallback);
+            if (!baseField.GetField("m_Width").IsDummy()) baseField.SetValue("m_Width", textureFile.m_Width);
+            if (!baseField.GetField("m_Height").IsDummy()) baseField.SetValue("m_Height", textureFile.m_Height);
+            if (!baseField.GetField("m_TextureFormat").IsDummy()) baseField.SetValue("m_TextureFormat", textureFile.m_TextureFormat);
+            if (!baseField.GetField("m_MipCount").IsDummy()) baseField.SetValue("m_MipCount", textureFile.m_MipCount);
+            if (!baseField.GetField("m_MipMap").IsDummy()) if (!baseField.Get("m_MipMap").IsDummy()) baseField.SetValue("m_MipMap", textureFile.m_MipMap);
+            if (!baseField.GetField("m_IsReadable").IsDummy()) baseField.SetValue("m_IsReadable", textureFile.m_IsReadable);
+            if (!baseField.GetField("m_ReadAllowed").IsDummy()) baseField.SetValue("m_ReadAllowed", textureFile.m_ReadAllowed);
+            if (!baseField.GetField("m_StreamingMipmaps").IsDummy()) baseField.SetValue("m_StreamingMipmaps", textureFile.m_StreamingMipmaps);
+            if (!baseField.GetField("m_StreamingMipmapsPriority").IsDummy()) baseField.SetValue("m_StreamingMipmapsPriority", textureFile.m_StreamingMipmapsPriority);
+            if (!baseField.GetField("m_ImageCount").IsDummy()) baseField.SetValue("m_ImageCount", textureFile.m_ImageCount);
+            if (!baseField.GetField("m_TextureDimension").IsDummy()) baseField.SetValue("m_TextureDimension", textureFile.m_TextureDimension);
+            if (!baseField.GetField("m_TextureSettings/m_FilterMode").IsDummy()) baseField.SetValue("m_TextureSettings/m_FilterMode", textureFile.m_TextureSettings.m_FilterMode);
+            if (!baseField.GetField("m_TextureSettings/m_Aniso").IsDummy()) baseField.SetValue("m_TextureSettings/m_Aniso", textureFile.m_TextureSettings.m_Aniso);
+            if (!baseField.GetField("m_TextureSettings/m_MipBias").IsDummy()) baseField.SetValue("m_TextureSettings/m_MipBias", textureFile.m_TextureSettings.m_MipBias);
+            if (!baseField.GetField("m_TextureSettings/m_WrapMode").IsDummy()) baseField.SetValue("m_TextureSettings/m_WrapMode", textureFile.m_TextureSettings.m_WrapMode);
+            if (!baseField.GetField("m_TextureSettings/m_WrapU").IsDummy()) baseField.SetValue("m_TextureSettings/m_WrapU", textureFile.m_TextureSettings.m_WrapU);
+            if (!baseField.GetField("m_TextureSettings/m_WrapV").IsDummy()) baseField.SetValue("m_TextureSettings/m_WrapV", textureFile.m_TextureSettings.m_WrapV);
+            if (!baseField.GetField("m_TextureSettings/m_WrapW").IsDummy()) baseField.SetValue("m_TextureSettings/m_WrapW", textureFile.m_TextureSettings.m_WrapW);
+
+            if (!baseField.GetField("m_LightmapFormat").IsDummy()) baseField.SetValue("m_LightmapFormat", textureFile.m_LightmapFormat);
+            if (!baseField.GetField("m_ColorSpace").IsDummy()) baseField.SetValue("m_ColorSpace", textureFile.m_ColorSpace);
+
+            var image_data = baseField.GetField("image data");
+            image_data.GetValue().type = EnumValueTypes.ByteArray;
+            image_data.templateField.valueType = EnumValueTypes.ByteArray;
+            var byteArray = new AssetTypeByteArray()
+            {
+                size = (uint)textureFile.pictureData.Length,
+                data = textureFile.pictureData
+            };
+            image_data.GetValue().Set(byteArray);
+            if (!baseField.GetField("m_CompleteImageSize").IsDummy()) baseField.SetValue("m_CompleteImageSize", textureFile.pictureData.Length);
+
+
+            if (!baseField.GetField("m_StreamData/offset").IsDummy()) baseField.SetValue("m_StreamData/offset", textureFile.m_StreamData.offset);
+            if (!baseField.GetField("m_StreamData/size").IsDummy()) baseField.SetValue("m_StreamData/size", textureFile.m_StreamData.size);
+            if (!baseField.GetField("m_StreamData/path").IsDummy()) baseField.SetValue("m_StreamData/path", textureFile.m_StreamData.path);
+        }
+
         public static string GetName(this AssetExternal asset, AssetsManager am)
         {
             switch ((AssetClassID)asset.info.curFileType)
