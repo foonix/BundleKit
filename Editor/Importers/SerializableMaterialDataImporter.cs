@@ -14,17 +14,16 @@ namespace BundleKit.Bundles
         public const string Extension = "smd";
 
         [SerializeField]
-        public string identity;
+        public string shader;
 
         public override void OnImportAsset(AssetImportContext ctx)
         {
             string json = File.ReadAllText(ctx.assetPath);
             var smd = JsonUtility.FromJson<SerializableMaterialData>(json);
 
-            var material = new Material(Shader.Find(smd.shader));
+            var material = new Material(Shader.Find("Standard"));
             var localTextures = new Dictionary<long, Texture>();
             smd.Apply(material, localTextures);
-
             ctx.AddObjectToAsset(smd.identity, material);
         }
 

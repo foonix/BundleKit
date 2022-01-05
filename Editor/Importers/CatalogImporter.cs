@@ -1,5 +1,4 @@
 ﻿using AssetsTools.NET.Extra;
-using BundleKit.Assets;
 using BundleKit.PipelineJobs;
 using BundleKit.Utility;
 using System;
@@ -10,7 +9,6 @@ using UnityEditor;
 using UnityEditor.Build.Pipeline.Utilities;
 using UnityEditor.Experimental.AssetImporters;
 using UnityEngine;
-using UnityEngine.Rendering;
 using Object = UnityEngine.Object;
 
 namespace BundleKit.Bundles
@@ -19,8 +17,6 @@ namespace BundleKit.Bundles
     public class CatalogImporter : ScriptedImporter
     {
         public const string Extension = "catalog";
-        public TextureDimension TextureDimension;
-        public string CubeName;
         public override void OnImportAsset(AssetImportContext ctx)
         {
             var am = new AssetsManager();
