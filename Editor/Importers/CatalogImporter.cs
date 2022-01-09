@@ -1,4 +1,5 @@
 ﻿using AssetsTools.NET.Extra;
+using BundleKit.Assets;
 using BundleKit.PipelineJobs;
 using BundleKit.Utility;
 using System;
@@ -51,7 +52,7 @@ namespace BundleKit.Bundles
             var catalog = ScriptableObject.CreateInstance<Catalog>();
             ctx.AddObjectToAsset("Catalog", catalog);
             ctx.SetMainObject(catalog);
-            catalog.Assets = new List<(Object, string, long)>();
+            catalog.Assets = new List<AssetMap>();
 
             var allAssets = bundle.LoadAllAssets();
 
@@ -65,10 +66,7 @@ namespace BundleKit.Bundles
                 }
 
                 var foundInfo = AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out string guid, out long localId);
-                var identifier = HashingMethods.Calculate<MD4>(localId).ToString();
-
-                ctx.AddObjectToAsset(identifier, asset);
-                foundInfo = AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out guid, out localId);
+                ctx.AddObjectToAsset($"{localId}", asset);
                 catalog.Assets.Add((asset, guid, localId));
             }
         }

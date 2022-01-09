@@ -139,7 +139,6 @@ namespace BundleKit.PipelineJobs
                     }
                     //var maps = reverseMap.Select(map => (map.Key, map.Value.Select(kvp => (kvp.Key, kvp.Value)).ToArray())).ToArray();
 
-
                     preloadTableArray.SetChildrenList(preloadChildren.ToArray());
                     containerArray.SetChildrenList(mContainerChildren.ToArray());
                     dependencyArray.SetChildrenList(Array.Empty<AssetTypeValueField>());

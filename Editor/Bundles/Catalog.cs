@@ -1,4 +1,5 @@
 ﻿using AssetsTools.NET.Extra;
+using BundleKit.Assets;
 using BundleKit.Utility;
 using System.Collections.Generic;
 using System.IO;
@@ -11,7 +12,7 @@ namespace BundleKit.Bundles
 {
     public class Catalog : ScriptableObject
     {
-        public List<(Object asset, string sourceFile, long localId)> Assets;
+        public List<AssetMap> Assets;
 
         public void Initialize()
         {
@@ -26,8 +27,6 @@ namespace BundleKit.Bundles
             var (bun, bundleAssetsFile, assetBundleExtAsset) = am.LoadBundle(path);
 
             var bundleBaseField = assetBundleExtAsset.instance.GetBaseField();
-            var dependencyArray = bundleBaseField.GetField("m_Dependencies/Array");
-            var dependencies = dependencyArray.GetChildrenList().Select(dep => dep.GetValue().AsString()).ToArray();
             var bundleName = bundleBaseField.GetValue("m_AssetBundleName").AsString();
 
             am.UnloadAll();
@@ -54,7 +53,7 @@ namespace BundleKit.Bundles
             Assets = bundle.LoadAllAssets().Select(asset =>
             {
                 var found = AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out string guid, out long loadedId);
-                return (asset, guid, loadedId);
+                return new AssetMap(asset, guid, loadedId);
             }).ToList();
 
             hideFlags = HideFlags.None;

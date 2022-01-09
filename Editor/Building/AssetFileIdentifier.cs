@@ -39,7 +39,7 @@ namespace BundleKit.Building
                     {
                         //AssetLookup[mainAsset] = new Dictionary<long, long>();
                         //for (int i = 0; i < mainAsset.Assets.Count; i++)
-                        //    AssetLookup[mainAsset].Add(mainAsset.LocalIds[i], mainAsset.LocalIds[i]);
+                        //    AssetLookup[mainAsset].Add(mainAsset.LocalIds[i], mainAsset.Lo calIds[i]);
                     }
                     if (AssetLookup[mainAsset].ContainsKey(objectID.localIdentifierInFile))
                     {
