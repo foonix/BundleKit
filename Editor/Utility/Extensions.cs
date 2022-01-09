@@ -15,6 +15,8 @@ using UnityEditor.Build.Pipeline.Utilities;
 
 namespace BundleKit.Utility
 {
+    public delegate void UpdateLog(string title = null, string message = null, float progress = -1, bool log = true, params string[] context);
+
     internal static class TrackerExtensions
     {
         public static string HumanReadable(this string camelCased)
@@ -183,66 +185,6 @@ namespace BundleKit.Utility
                 return inst;
             else
                 return inst.dependencies[fileId - 1];
-        }
-
-        public static IEnumerable<AssetData> GetDependentAssetIds(this AssetsFileInstance inst, HashSet<AssetID> visited, AssetTypeValueField field, AssetsManager am, UpdateLog Update, bool crossFiles)
-        {
-            var fieldStack = new Stack<(AssetsFileInstance inst, AssetTypeValueField field, int depth)>();
-            fieldStack.Push((inst, field, depth: 0));
-            long p = 0;
-            float modVal = 100f;
-            while (fieldStack.Any())
-            {
-                var set = fieldStack.Pop();
-                var current = set.field;
-                var currentInst = set.inst;
-                var depth = set.depth;
-
-                foreach (var child in current.children)
-                {
-                    //not a value (ie not an int)
-                    if (!child.templateField.hasValue)
-                    {
-                        //not array of values either
-                        if (child.templateField.isArray && child.templateField.children[1].valueType != EnumValueTypes.ValueType_None)
-                            continue;
-
-                        string typeName = child.templateField.type;
-                        //is a pptr
-                        if (typeName.StartsWith("PPtr<") && typeName.EndsWith(">"))
-                        {
-                            var pathId = child.Get("m_PathID").GetValue().AsInt64();
-                            if (pathId == 0)
-                                continue;
-
-                            var fileId = child.Get("m_FileID").GetValue().AsInt();
-                            if (!crossFiles && fileId > 0)
-                                continue;
-
-                            var assetId = currentInst.ConvertToAssetID(fileId, pathId);
-                            if (assetId == null || visited.Contains(assetId))
-                                continue;
-
-                            visited.Add(assetId);
-                            var ext = am.GetExtAsset(currentInst, fileId, pathId);
-                            var name = ext.GetName(am);
-                            Update(null, $"({(AssetClassID)ext.info.curFileType}) {name}", ((++p) % modVal) / modVal, false);
-
-                            //we don't want to process monobehaviours as thats a project in itself
-                            if (ext.info.curFileType == (int)AssetClassID.MonoBehaviour)
-                                continue;
-
-                            yield return (ext, name, ext.file.name, 0, pathId, depth);
-
-                            fieldStack.Push((ext.file, ext.instance.GetBaseField(), depth + 1));
-                        }
-                        else
-                            //recurse through dependencies
-                            fieldStack.Push((currentInst, child, depth));
-                    }
-                }
-            }
-
         }
 
         [DebuggerDisplay("{assetsFileInstance.name}/{name} fid:{FileId} pid:{PathId} children: {Children.Count}")]

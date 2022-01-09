@@ -3,6 +3,7 @@ using BundleKit.Bundles;
 using System.IO;
 using System.Linq;
 using UnityEditor;
+using UnityEditorInternal;
 using UnityEngine;
 using static BundleKit.Utility.ShaderPicker;
 
@@ -43,6 +44,10 @@ namespace BundleKit.Editors
 
                 cursor = new Rect(cursor.x + offset + 7, cursor.y - 1, EditorGUIUtility.currentViewWidth - (cursor.width + cursor.x) - 16, cursor.height);
                 ShaderPopup(cursor, allShaderInfo, material.shader.name, OnSelectedShaderPopup);
+
+
+                cursor = new Rect(cursor.x - offset - 50, cursor.y + 5, 32, cursor.height);
+                
 
                 GUILayout.Space(32);
 

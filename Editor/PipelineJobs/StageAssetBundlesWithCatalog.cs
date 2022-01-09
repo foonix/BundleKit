@@ -27,7 +27,7 @@ using UpdateBundleObjectLayout = UnityEditor.Build.Pipeline.Tasks.UpdateBundleOb
 namespace BundleKit.PipelineJobs
 {
     [PipelineSupport(typeof(Pipeline)), RequiresManifestDatumType(typeof(AssetBundleDefinitions))]
-    public class StageAssetBundlesWithExternalReferences : PipelineJob
+    public class StageAssetBundlesWithCatalog : PipelineJob
     {
         [EnumFlag]
         public ContentBuildFlags contentBuildFlags = ContentBuildFlags.None;
@@ -170,9 +170,9 @@ namespace BundleKit.PipelineJobs
         {
             var ignoredExtensions = new[] { ".dll", ".cs" };
             var logBuilder = new StringBuilder();
-            var referencedBundles = AssetDatabase.FindAssets($"t:{nameof(AssetsReferenceBundle)}").Select(AssetDatabase.GUIDToAssetPath).ToArray();
+            var catalogs = AssetDatabase.FindAssets($"t:{nameof(Catalog)}").Select(AssetDatabase.GUIDToAssetPath).ToArray();
             int definedBundleCount = assetBundleDefs.Sum(abd => abd.assetBundles.Length);
-            int buildCount = definedBundleCount + referencedBundles.Length;
+            int buildCount = definedBundleCount + catalogs.Length;
             var builds = new AssetBundleBuild[buildCount];
             logBuilder.AppendLine($"Defining {builds.Length} AssetBundleBuilds");
 
@@ -208,7 +208,7 @@ namespace BundleKit.PipelineJobs
                                                  .Where(assetPath => !ignoredExtensions.Contains(Path.GetExtension(assetPath)))
                                                  .Where(dap => !explicitAssetPaths.Contains(dap)).ToArray();
 
-                        assets.AddRange(dependencies.Where(dap => Path.GetExtension(dap) != $".{AssetsReferenceImporter.Extension}"));
+                        assets.AddRange(dependencies.Where(dap => Path.GetExtension(dap) != $".{CatalogImporter.Extension}"));
                     }
 
                     build.assetNames = assets 
@@ -234,9 +234,9 @@ namespace BundleKit.PipelineJobs
             logBuilder.AppendLine("--------------------------------------------------");
             logBuilder.AppendLine($"Defining bundle: resources.assets");
             logBuilder.AppendLine();
-            for(int i = 0; i < referencedBundles.Length; i++)
+            for(int i = 0; i < catalogs.Length; i++)
             {
-                var resourcesPath = referencedBundles[i];
+                var resourcesPath = catalogs[i];
                 builds[definedBundleCount + i] = new AssetBundleBuild()
                 {
                     assetBundleName = $"{Path.GetFileNameWithoutExtension(resourcesPath)}.assets",

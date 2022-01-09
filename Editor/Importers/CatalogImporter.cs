@@ -24,7 +24,7 @@ namespace BundleKit.Bundles
             am.LoadClassPackage(classDataPath);
             am.LoadClassDatabaseFromPackage(Application.unityVersion);
 
-            am.PrepareNewBundle(ctx.assetPath, out var bun, out var bundleAssetsFile, out var assetBundleExtAsset);
+            var (bun, bundleAssetsFile, assetBundleExtAsset) = am.LoadBundle(ctx.assetPath);
 
             var bundleBaseField = assetBundleExtAsset.instance.GetBaseField();
             var dependencyArray = bundleBaseField.GetField("m_Dependencies/Array");
@@ -51,32 +51,26 @@ namespace BundleKit.Bundles
             var catalog = ScriptableObject.CreateInstance<Catalog>();
             ctx.AddObjectToAsset("Catalog", catalog);
             ctx.SetMainObject(catalog);
+            catalog.Assets = new List<(Object, string, long)>();
 
-            var assets = new List<Object>();
-            var textureLookup = new Dictionary<long, Texture>();
             var allAssets = bundle.LoadAllAssets();
-            var assetNames = bundle.GetAllAssetNames();
 
             for (int i = 0; i < allAssets.Length; i++)
             {
                 var asset = allAssets[i];
-                assets.Add(asset);
-                var foundInfo = AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out string guid, out long localId);
                 if (asset is Shader shader)
                 {
                     ShaderUtil.RegisterShader(shader);
                     continue;
                 }
 
-                if (foundInfo && asset is Texture2D tex)
-                    textureLookup[localId] = tex;
-
+                var foundInfo = AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out string guid, out long localId);
                 var identifier = HashingMethods.Calculate<MD4>(localId).ToString();
 
                 ctx.AddObjectToAsset(identifier, asset);
+                foundInfo = AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out guid, out localId);
+                catalog.Assets.Add((asset, guid, localId));
             }
-
-            catalog.objects = assets.ToArray();
         }
     }
 }

@@ -1,6 +1,7 @@
 ﻿using BundleKit.Bundles;
 using UnityEditor;
 using UnityEditor.Experimental.AssetImporters;
+using UnityEditorInternal;
 using UnityEngine;
 
 namespace BundleKit.Editors
@@ -14,6 +15,7 @@ namespace BundleKit.Editors
             var assetPath = AssetDatabase.GetAssetPath(target);
             var mainAsset = AssetDatabase.LoadMainAssetAtPath(assetPath);
             inspector = CreateEditor(mainAsset) as SerializedMaterialDataEditor;
+            InternalEditorUtility.SetIsInspectorExpanded(mainAsset, true);
         }
         public override void OnDisable()
         {

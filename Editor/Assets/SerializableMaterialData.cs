@@ -1,5 +1,7 @@
-﻿using System;
+﻿using BundleKit.Bundles;
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using static UnityEditor.ShaderUtil;
@@ -7,7 +9,7 @@ using static UnityEditor.ShaderUtil;
 namespace BundleKit.Assets
 {
     [System.Serializable]
-    public struct SerializableMaterialData 
+    public struct SerializableMaterialData
     {
         public string identity;
         public string name;
@@ -53,6 +55,24 @@ namespace BundleKit.Assets
                         var scale = material.GetTextureScale(data.name);
                         var textEnv = material.GetTexture(data.name);
                         if (textEnv && AssetDatabase.TryGetGUIDAndLocalFileIdentifier(textEnv, out string guid, out long localId))
+                        {
+                            var asset = AssetDatabase.LoadMainAssetAtPath(AssetDatabase.GUIDToAssetPath(guid));
+                            if (asset is Catalog catalog)
+                            {
+                                try
+                                {
+                                    for (int j = 0; j < catalog.Assets.Count; j++)
+                                    {
+                                        var catalogAsset = catalog.Assets[j];
+                                        if (catalogAsset.asset.name == textEnv.name)
+                                        {
+                                            localId = catalogAsset.localId;
+                                            break;
+                                        }
+                                    }
+                                }
+                                finally { }
+                            }
                             data.SetValue(new TextureReference
                             {
                                 guid = guid,
@@ -60,6 +80,7 @@ namespace BundleKit.Assets
                                 offset = offset,
                                 scale = scale
                             });
+                        }
                         break;
                     default:
                         throw new InvalidOperationException($"Property: {data.name} has unsupported type: {data.type}");
@@ -77,7 +98,7 @@ namespace BundleKit.Assets
             return serializedMaterial;
         }
 
-        public void Apply(Material material, Dictionary<long, Texture> localTextures)
+        public void Apply(Material material)
         {
             material.shader = Shader.Find(shader);
             material.doubleSidedGI = doubleSidedGI;
@@ -102,17 +123,30 @@ namespace BundleKit.Assets
                         material.SetFloat(data.name, data.floatValue);
                         break;
                     case ShaderPropertyType.TexEnv:
-                        var textureReference = data.textureReference;
-                        var path = AssetDatabase.GUIDToAssetPath(textureReference.guid);
-                        var texture = AssetDatabase.LoadAssetAtPath<Texture>(path);
-                        if (!texture && localTextures.ContainsKey(textureReference.localId))
-                            texture = localTextures[textureReference.localId];
-                        if (texture)
+                        try
                         {
-                            material.SetTexture(data.name, texture);
-                            material.SetTextureOffset(data.name, textureReference.offset);
-                            material.SetTextureScale(data.name, textureReference.scale);
+                            var textureReference = data.textureReference;
+                            var path = AssetDatabase.GUIDToAssetPath(textureReference.guid);
+                            var mainAsset = AssetDatabase.LoadMainAssetAtPath(path);
+                            Texture texture = null;
+                            switch (mainAsset)
+                            {
+                                case Texture tex:
+                                    texture = tex;
+                                    break;
+                                case Catalog catalog:
+                                    var localId = textureReference.localId;
+                                    texture = catalog.Assets.FirstOrDefault(entry => entry.localId == localId).asset as Texture;
+                                    break;
+                            }
+                            if (texture)
+                            {
+                                material.SetTexture(data.name, texture);
+                                material.SetTextureOffset(data.name, textureReference.offset);
+                                material.SetTextureScale(data.name, textureReference.scale);
+                            }
                         }
+                        catch { }
                         break;
                     default:
                         throw new InvalidOperationException($"Property: {data.name} has unsupported type: {data.type}");

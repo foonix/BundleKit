@@ -1,5 +1,6 @@
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
+using BundleKit.Assets;
 using BundleKit.Utility;
 using System;
 using System.Collections.Generic;
@@ -58,7 +59,8 @@ namespace BundleKit.PipelineJobs
 
                     am.LoadClassPackage(classDataPath);
                     am.LoadClassDatabaseFromPackage(Application.unityVersion);
-                    am.PrepareNewBundle(templateBundlePath, out var bun, out var bundleAssetsFile, out var assetBundleExtAsset);
+
+                    var (bun, bundleAssetsFile, assetBundleExtAsset) = am.LoadBundle(templateBundlePath);
 
                     var bundleBaseField = assetBundleExtAsset.instance.GetBaseField();
 
@@ -67,9 +69,7 @@ namespace BundleKit.PipelineJobs
                     var preloadTableArray = bundleBaseField.GetField("m_PreloadTable/Array");
 
                     var preloadChildren = new List<AssetTypeValueField>();
-                    var dependencyChildren = new List<AssetTypeValueField>();
                     var mContainerChildren = new List<AssetTypeValueField>();
-                    var dependencies = new Dictionary<string, int>();
                     var streamReaders = new Dictionary<string, Stream>();
 
                     bundleAssetsFile.file.dependencies.dependencies.Clear();
@@ -77,12 +77,9 @@ namespace BundleKit.PipelineJobs
                     bundleAssetsFile.dependencies.Clear();
 
                     var compiledFilters = filters.Select(f => (assetClass: f.assetClass, nameRegex: f.nameRegex.Select(reg => new Regex(reg)).ToArray())).ToArray();
-                    IEnumerable<AssetTree> treeEnumeration =
-                        targetFiles.SelectMany(p =>
-                            compiledFilters.SelectMany(filter =>
-                                am.GetAssetsInst(p).CollectAssetTrees(am, filter.nameRegex, filter.assetClass, Log)
-                            )
-                        );
+                    var treeEnumeration = targetFiles
+                            .Select(p => am.LoadAssetsFile(p, false))
+                            .SelectMany(af => compiledFilters.SelectMany(filter => af.CollectAssetTrees(am, filter.nameRegex, filter.assetClass, Log)));
 
                     var felledTree = treeEnumeration.SelectMany(tree => tree.Flatten(true));
                     var localGroups = felledTree.GroupBy(tree => tree).ToArray();
@@ -142,19 +139,10 @@ namespace BundleKit.PipelineJobs
                     }
                     //var maps = reverseMap.Select(map => (map.Key, map.Value.Select(kvp => (kvp.Key, kvp.Value)).ToArray())).ToArray();
 
-                    foreach (var dependency in dependencies.OrderBy(dep => dep.Value).Select(dep => dep.Key))
-                    {
-                        string path = Path.Combine(dataDirectoryPath, dependency);
-                        bundleAssetsFile.AddDependency(path);
-
-                        var depTemplate = ValueBuilder.DefaultValueFieldFromArrayTemplate(dependencyArray);
-                        depTemplate.GetValue().Set(path);
-                        dependencyChildren.Add(depTemplate);
-                    }
 
                     preloadTableArray.SetChildrenList(preloadChildren.ToArray());
                     containerArray.SetChildrenList(mContainerChildren.ToArray());
-                    dependencyArray.SetChildrenList(dependencyChildren.ToArray());
+                    dependencyArray.SetChildrenList(Array.Empty<AssetTypeValueField>());
 
                     var newAssetBundleBytes = bundleBaseField.WriteToByteArray();
                     assetsReplacers.Insert(0, new AssetsReplacerFromMemory(0, assetBundleExtAsset.info.index, (int)assetBundleExtAsset.info.curFileType, 0xFFFF, newAssetBundleBytes));

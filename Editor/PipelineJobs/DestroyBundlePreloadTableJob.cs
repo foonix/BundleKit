@@ -14,16 +14,15 @@ namespace BundleKit.PipelineJobs
     [PipelineSupport(typeof(Pipeline))]
     public class DestroyBundlePreloadTableJob : PipelineJob
     {
-        public AssetsReferenceBundle bundle;
+        public DefaultAsset bundle;
         public string outputAssetBundlePath;
 
         public override Task Execute(Pipeline pipeline)
         {
-
             var am = new AssetsManager();
             var path = AssetDatabase.GetAssetPath(bundle);
 
-            am.PrepareNewBundle(path, out var bun, out var bundleAssetsFile, out var assetBundleExtAsset);
+            var (bun, bundleAssetsFile, assetBundleExtAsset) = am.LoadBundle(path);
 
             var classDataPath = Path.Combine("Packages", "com.passivepicasso.bundlekit", "Library", "classdata.tpk");
             am.LoadClassPackage(classDataPath);
@@ -36,7 +35,7 @@ namespace BundleKit.PipelineJobs
             preloadTableArray.SetChildrenList(Array.Empty<AssetTypeValueField>());
 
             var containerChildren = bundleBaseField.GetField("m_Container/Array").GetChildrenList();
-            foreach(var child in containerChildren)
+            foreach (var child in containerChildren)
             {
                 child.SetValue("second/preloadIndex", 0);
                 child.SetValue("second/preloadSize", 0);

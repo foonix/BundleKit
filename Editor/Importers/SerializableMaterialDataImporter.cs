@@ -1,5 +1,4 @@
 ﻿using BundleKit.Assets;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
@@ -22,8 +21,7 @@ namespace BundleKit.Bundles
             var smd = JsonUtility.FromJson<SerializableMaterialData>(json);
 
             var material = new Material(Shader.Find("Standard"));
-            var localTextures = new Dictionary<long, Texture>();
-            smd.Apply(material, localTextures);
+            smd.Apply(material);
             ctx.AddObjectToAsset(smd.identity, material);
         }
 
