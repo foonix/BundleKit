@@ -28,7 +28,6 @@ namespace BundleKit.PipelineJobs
         {
             var am = new AssetsManager();
             var assetsReplacers = new List<AssetsReplacer>();
-            var bundleReplacers = new List<BundleReplacer>();
 
             using (var progressBar = new ProgressBar("Constructing AssetBundle"))
                 try
@@ -68,6 +67,10 @@ namespace BundleKit.PipelineJobs
                     var dependencyArray = bundleBaseField.GetField("m_Dependencies/Array");
                     var preloadTableArray = bundleBaseField.GetField("m_PreloadTable/Array");
 
+                    var bundleName = Path.GetFileNameWithoutExtension(outputAssetBundlePath);
+                    bundleBaseField.Get("m_Name").GetValue().Set(bundleName);
+                    bundleBaseField.Get("m_AssetBundleName").GetValue().Set(bundleName);
+
                     var preloadChildren = new List<AssetTypeValueField>();
                     var mContainerChildren = new List<AssetTypeValueField>();
                     var streamReaders = new Dictionary<string, Stream>();
@@ -84,7 +87,8 @@ namespace BundleKit.PipelineJobs
                     var felledTree = treeEnumeration.SelectMany(tree => tree.Flatten(true));
                     var localGroups = felledTree.GroupBy(tree => tree).ToArray();
                     var localIdMap = new Dictionary<AssetTree, long>();
-                    var reverseMap = new Dictionary<AssetTree, Dictionary<(int, long), (int, long)>>();
+                    var fileMaps = new HashSet<MapRecord>();
+                    var preloadIndex = 0;
                     Log($"Generating Tree Map");
                     for (long i = 0; i < localGroups.Length; i++)
                     {
@@ -101,18 +105,20 @@ namespace BundleKit.PipelineJobs
                         var baseField = assetTree.assetExternal.instance.GetBaseField();
 
                         Log(message: $"Remapping ({baseField.GetFieldType()}) {assetTree.name} PPts");
-                        var remap = assetTree.Children.Distinct().ToDictionary(child => (child.FileId, child.PathId), child => (0, localIdMap[child]));
-                        //reverseMap.Add(assetTree, remap.ToDictionary(map => map.Value, map => map.Key));
-                        //var pptrs = baseField.FindFieldType(typeName => typeName.StartsWith("PPtr<") && typeName.EndsWith(">"));
-                        //foreach (var pptr in pptrs)
-                        //{
-                        //    var assetId = asset.file.ConvertToAssetID(pptr.GetValue("m_FileID").AsInt(), pptr.GetValue("m_PathID").AsInt64());
+                        var distinctChildren = assetTree.Children.Distinct().ToArray();
 
-                        //}
+                        var fileMapElements = distinctChildren
+                            .Select(child => new MapRecord(localIdMap[child], (child.assetExternal.file.name, child.PathId)))
+                            .Prepend(new MapRecord(localIdMap[assetTree], (assetTree.assetExternal.file.name, assetTree.PathId)));
+
+                        foreach (var map in fileMapElements)
+                            fileMaps.Add(map);
+
+                        var remap = distinctChildren.ToDictionary(child => (child.FileId, child.PathId), child => (0, localIdMap[child]));
                         baseField.RemapPPtrs(remap);
 
                         var tableData = assetTree.Flatten(true).Distinct().ToArray();
-                        var preloadIndex = preloadChildren.Count;
+                        preloadIndex = preloadChildren.Count;
                         foreach (var data in tableData)
                         {
                             var entry = ValueBuilder.DefaultValueFieldFromArrayTemplate(preloadTableArray);
@@ -137,7 +143,8 @@ namespace BundleKit.PipelineJobs
                         assetsReplacers.Add(currentAssetReplacer);
                         mContainerChildren.Add(containerArray.CreateEntry(assetTree.name, 0, localId, preloadIndex, preloadChildren.Count - preloadIndex));
                     }
-                    //var maps = reverseMap.Select(map => (map.Key, map.Value.Select(kvp => (kvp.Key, kvp.Value)).ToArray())).ToArray();
+
+                    AddFileMap(am, assetsReplacers, containerArray, preloadTableArray, mContainerChildren, preloadChildren, preloadIndex, fileMaps);
 
                     preloadTableArray.SetChildrenList(preloadChildren.ToArray());
                     containerArray.SetChildrenList(mContainerChildren.ToArray());
@@ -148,28 +155,67 @@ namespace BundleKit.PipelineJobs
 
                     foreach (var stream in streamReaders)
                         stream.Value.Dispose();
+                    streamReaders.Clear();
 
                     byte[] newAssetData;
                     using (var bundleStream = new MemoryStream())
                     using (var writer = new AssetsFileWriter(bundleStream))
                     {
-                        bundleAssetsFile.file.Write(writer, 0, assetsReplacers, 0);
+                        bundleAssetsFile.file.Write(writer, 0, assetsReplacers, 0, am.classFile);
                         newAssetData = bundleStream.ToArray();
                     }
-                    var bundleReplacer = new BundleReplacerFromMemory(bundleAssetsFile.name, bundleAssetsFile.name, true, newAssetData, -1);
-                    bundleReplacers.Add(bundleReplacer);
 
+                    var bundles = new List<BundleReplacer>
+                        {
+                            new BundleReplacerFromMemory(bundleAssetsFile.name, bundleName, true, newAssetData, -1)
+                        };
                     using (var file = File.OpenWrite(outputAssetBundlePath))
                     using (var writer = new AssetsFileWriter(file))
-                        bun.file.Write(writer, bundleReplacers);
+                        bun.file.Write(writer, bundles);
+
+                    preloadChildren.Clear();
+                    mContainerChildren.Clear();
+                    bundles.Clear();
+                    localIdMap.Clear();
+                    fileMaps.Clear();
+                    bundles = null;
+
                 }
                 finally
                 {
+                    assetsReplacers.Clear();
                     am.UnloadAll(true);
                 }
             return Task.CompletedTask;
         }
 
+        private static void AddFileMap(AssetsManager am, List<AssetsReplacer> assetsReplacers, AssetTypeValueField containerArray, AssetTypeValueField preloadTableArray, List<AssetTypeValueField> mContainerChildren, List<AssetTypeValueField> preloadChildren, int preloadIndex, HashSet<MapRecord> fileMaps)
+        {
+            const string assetName = "FileMap";
+            var templateField = new AssetTypeTemplateField();
 
+            var cldbType = AssetHelper.FindAssetClassByID(am.classFile, (int)AssetClassID.TextAsset);
+            templateField.FromClassDatabase(am.classFile, cldbType, 0);
+
+            var textAssetBaseField = ValueBuilder.DefaultValueFieldFromTemplate(templateField);
+
+            var fileMap = new FileMap { Maps = fileMaps.ToArray() };
+            var mapJson = EditorJsonUtility.ToJson(fileMap, false);
+
+            textAssetBaseField.SetValue("m_Name", assetName);
+            textAssetBaseField.SetValue("m_Script", mapJson);
+
+            int pathId = assetsReplacers.Count + 2;
+            assetsReplacers.Add(new AssetsReplacerFromMemory(0, pathId, cldbType.classId, 0xffff, textAssetBaseField.WriteToByteArray()));
+
+            var entry = ValueBuilder.DefaultValueFieldFromArrayTemplate(preloadTableArray);
+            entry.SetValue("m_FileID", 0);
+            entry.SetValue("m_PathID", pathId);
+            preloadChildren.Add(entry);
+
+            // Use m_Container to construct an blank element for it
+            var pair = containerArray.CreateEntry($"assets/{assetName}.json".ToLowerInvariant(), 0, pathId, preloadIndex, preloadChildren.Count - preloadIndex);
+            mContainerChildren.Add(pair);
+        }
     }
 }

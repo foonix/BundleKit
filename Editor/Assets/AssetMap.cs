@@ -7,22 +7,19 @@ namespace BundleKit.Assets
     [Serializable]
     public struct AssetMap : IEquatable<AssetMap>
     {
-        public Object asset;
+        public Object internalAsset;
+        public Object externalAsset;
         public string sourceFile;
         public long localId;
+        public long sourceId;
 
-        public AssetMap(Object asset, string sourceFile, long localId)
+        public AssetMap(Object internalAsset, Object externalAsset, string sourceFile, long localId, long sourceId)
         {
-            this.asset = asset;
+            this.internalAsset = internalAsset;
+            this.externalAsset = externalAsset;
             this.sourceFile = sourceFile;
+            this.sourceId = sourceId;
             this.localId = localId;
-        }
-
-        public void Deconstruct(out Object asset, out string sourceFile, out long localId)
-        {
-            asset = this.asset;
-            sourceFile = this.sourceFile;
-            localId = this.localId;
         }
 
         public override bool Equals(object obj)
@@ -33,14 +30,14 @@ namespace BundleKit.Assets
         public bool Equals(AssetMap other)
         {
             return sourceFile == other.sourceFile &&
-                   localId == other.localId;
+                   sourceId == other.sourceId;
         }
 
         public override int GetHashCode()
         {
             int hashCode = -1047228845;
             hashCode = hashCode * -1521134295 + EqualityComparer<string>.Default.GetHashCode(sourceFile);
-            hashCode = hashCode * -1521134295 + localId.GetHashCode();
+            hashCode = hashCode * -1521134295 + sourceId.GetHashCode();
             return hashCode;
         }
 
@@ -54,14 +51,5 @@ namespace BundleKit.Assets
             return !(left == right);
         }
 
-        public static implicit operator (Object asset, string sourceFile, long localId)(AssetMap value)
-        {
-            return (value.asset, value.sourceFile, value.localId);
-        }
-
-        public static implicit operator AssetMap((Object asset, string sourceFile, long localId) value)
-        {
-            return new AssetMap(value.asset, value.sourceFile, value.localId);
-        }
     }
 }

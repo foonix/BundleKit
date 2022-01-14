@@ -236,11 +236,11 @@ namespace BundleKit.PipelineJobs
             logBuilder.AppendLine();
             for(int i = 0; i < catalogs.Length; i++)
             {
-                var resourcesPath = catalogs[i];
+                var catalogPath = catalogs[i];
                 builds[definedBundleCount + i] = new AssetBundleBuild()
                 {
-                    assetBundleName = $"{Path.GetFileNameWithoutExtension(resourcesPath)}.assets",
-                    assetNames = new[] { resourcesPath }
+                    assetBundleName = $"{Path.GetFileNameWithoutExtension(catalogPath)}.assets",
+                    assetNames = new[] { catalogPath }
                 };
             }
             foreach (var asset in builds[builds.Length - 1].assetNames)

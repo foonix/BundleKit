@@ -1,12 +1,15 @@
 ﻿using AssetsTools.NET.Extra;
 using BundleKit.Assets;
 using BundleKit.Utility;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
+using Object = UnityEngine.Object;
 
 namespace BundleKit.Bundles
 {
@@ -50,13 +53,28 @@ namespace BundleKit.Bundles
                         break;
                 }
             }
-            Assets = bundle.LoadAllAssets().Select(asset =>
-            {
-                var found = AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out string guid, out long loadedId);
-                return new AssetMap(asset, guid, loadedId);
-            }).ToList();
+            var fileMapJson = bundle.LoadAsset<TextAsset>("FileMap");
+            var fileMap = JsonUtility.FromJson<FileMap>(fileMapJson.text);
+            var lookup = fileMap.Maps.ToDictionary(element => element.LocalId, element => element.OriginId);
 
-            hideFlags = HideFlags.None;
+            var allMyChildren = AssetDatabase.LoadAllAssetRepresentationsAtPath(AssetDatabase.GetAssetPath(this));
+            Object[] allAssets = bundle.LoadAllAssets();
+            foreach (var asset in allAssets)
+            {
+                if (asset.name == "FileMap") continue;
+                var found = AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out string name, out long localId);
+                long sourceId = localId;
+                if (lookup.ContainsKey(localId))
+                {
+                    name = lookup[localId].fileName;
+                    sourceId = lookup[localId].localId;
+                }
+                var childAsset = allMyChildren.FirstOrDefault(a => a.name == asset.name);
+
+                Assets.Add(new AssetMap(asset, childAsset, name, localId, sourceId));
+            }
+            Assets = Assets.OrderBy(asset => asset.localId).ToList();
+            hideFlags = HideFlags.NotEditable;
         }
         private void Awake()
         {

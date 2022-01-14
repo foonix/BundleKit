@@ -44,21 +44,23 @@ namespace BundleKit.Bundles
             {
                 bundle = AssetBundle.LoadFromFile(ctx.assetPath);
             }
-            catch (Exception e)
+            catch (Exception)
             {
                 Debug.LogError($"Failed to load: {ctx.assetPath}");
             }
+
+            var allAssets = bundle.LoadAllAssets();
+            var allNames = bundle.GetAllAssetNames();
 
             var catalog = ScriptableObject.CreateInstance<Catalog>();
             ctx.AddObjectToAsset("Catalog", catalog);
             ctx.SetMainObject(catalog);
             catalog.Assets = new List<AssetMap>();
 
-            var allAssets = bundle.LoadAllAssets();
-
             for (int i = 0; i < allAssets.Length; i++)
             {
                 var asset = allAssets[i];
+                if (asset.name == "FileMap") continue;
                 if (asset is Shader shader)
                 {
                     ShaderUtil.RegisterShader(shader);
@@ -67,7 +69,6 @@ namespace BundleKit.Bundles
 
                 var foundInfo = AssetDatabase.TryGetGUIDAndLocalFileIdentifier(asset, out string guid, out long localId);
                 ctx.AddObjectToAsset($"{localId}", asset);
-                catalog.Assets.Add((asset, guid, localId));
             }
         }
     }

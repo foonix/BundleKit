@@ -12,10 +12,17 @@ namespace BundleKit.Building
 {
     public class AssetFileIdentifier : IDeterministicIdentifiers
     {
+        string extension;
+        const string archivePrefix = "archive:/";
+        public AssetFileIdentifier(string extension = ".catalog")
+        {
+            this.extension = extension;
+        }
+
         Dictionary<Catalog, Dictionary<long, long>> AssetLookup = new Dictionary<Catalog, Dictionary<long, long>>();
         public string GenerateInternalFileName(string name)
         {
-            if (Path.GetExtension(name) == ".assets")
+            if (Path.GetExtension(name) == extension)
                 return name;
 
             return "CAB-" + HashingMethods.Calculate<MD4>(name);
@@ -25,21 +32,23 @@ namespace BundleKit.Building
             var path = AssetDatabase.GUIDToAssetPath(objectID.guid.ToString());
             var mainAsset = AssetDatabase.LoadMainAssetAtPath(path) as Catalog;
 
-            if (mainAsset || (objectID.filePath.StartsWith("archive:/") && objectID.filePath.EndsWith(".assets")))
+            if (mainAsset || (objectID.filePath.StartsWith(archivePrefix) && objectID.filePath.EndsWith(extension)))
             {
                 if (!mainAsset)
                 {
-                    var nameLength = objectID.filePath.Length - ("archive:/".Length + ".assets".Length);
-                    var assetName = objectID.filePath.Substring("archive:/".Length, nameLength);
+                    var nameLength = objectID.filePath.Length - (archivePrefix.Length + extension.Length);
+                    var assetName = objectID.filePath.Substring(archivePrefix.Length, nameLength);
                     mainAsset = AssetDatabase.FindAssets($"{assetName} t:{nameof(Catalog)}").Select(AssetDatabase.GUIDToAssetPath).Select(AssetDatabase.LoadAssetAtPath<Catalog>).FirstOrDefault();
                 }
                 if (mainAsset)
                 {
                     if (!AssetLookup.ContainsKey(mainAsset))
                     {
-                        //AssetLookup[mainAsset] = new Dictionary<long, long>();
-                        //for (int i = 0; i < mainAsset.Assets.Count; i++)
-                        //    AssetLookup[mainAsset].Add(mainAsset.LocalIds[i], mainAsset.Lo calIds[i]);
+                        AssetLookup[mainAsset] = new Dictionary<long, long>();
+                        for (int i = 0; i < mainAsset.Assets.Count; i++)
+                        {
+                            AssetLookup[mainAsset].Add(mainAsset.Assets[i].localId, mainAsset.Assets[i].sourceId);
+                        }
                     }
                     if (AssetLookup[mainAsset].ContainsKey(objectID.localIdentifierInFile))
                     {

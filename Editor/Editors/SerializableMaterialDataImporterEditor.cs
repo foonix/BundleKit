@@ -1,4 +1,5 @@
-﻿using BundleKit.Bundles;
+﻿using BundleKit.Assets;
+using BundleKit.Bundles;
 using UnityEditor;
 using UnityEditor.Experimental.AssetImporters;
 using UnityEditorInternal;
@@ -19,16 +20,19 @@ namespace BundleKit.Editors
         }
         public override void OnDisable()
         {
+            if (!inspector) return;
             inspector.draw = true;
             inspector = null;
         }
         protected override void OnHeaderGUI()
         {
+            if (!inspector) return;
             inspector.draw = true;
             inspector.DrawHeader();
         }
         public override void OnInspectorGUI()
         {
+            if (!inspector) return;
             inspector.OnInspectorGUI();
             inspector.draw = false;
         }

@@ -214,25 +214,14 @@ namespace BundleKit.Utility
 
         }
 
-
         public static AssetTypeValueField CreateEntry(this AssetTypeValueField containerArray, string name, int fileId, long pathId, int preloadIndex = 0, int preloadSize = 0)
         {
             var pair = ValueBuilder.DefaultValueFieldFromArrayTemplate(containerArray);
-            //Name the asset identified by this element
-            pair.Get("first").GetValue().Set(name);
-
-            //Get fields for populating index and 
-            var second = pair.Get("second");
-            var assetField = second.Get("asset");
-
-            //We are not constructing a preload table, so we are setting these all to zero
-            second.SetValue("preloadIndex", preloadIndex);
-            second.SetValue("preloadSize", preloadSize);
-
-            // Update the fileId and PathID so that asset can be located within the bundle
-            // We zero out the fileId because the asset is in the local file, not a dependent file
-            assetField.SetValue("m_FileID", fileId);
-            assetField.SetValue("m_PathID", pathId);
+            pair.SetValue("first", name);
+            pair.SetValue("second/preloadIndex", preloadIndex);
+            pair.SetValue("second/preloadSize", preloadSize);
+            pair.SetValue("second/asset/m_FileID", fileId);
+            pair.SetValue("second/asset/m_PathID", pathId);
             return pair;
         }
     }

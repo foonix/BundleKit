@@ -64,9 +64,9 @@ namespace BundleKit.Assets
                                     for (int j = 0; j < catalog.Assets.Count; j++)
                                     {
                                         var catalogAsset = catalog.Assets[j];
-                                        if (catalogAsset.asset.name == textEnv.name)
+                                        if (textEnv.name == catalogAsset.internalAsset.name)
                                         {
-                                            localId = catalogAsset.localId;
+                                            localId = catalogAsset.sourceId;
                                             break;
                                         }
                                     }
@@ -98,9 +98,10 @@ namespace BundleKit.Assets
             return serializedMaterial;
         }
 
-        public void Apply(Material material)
+        public Material ToMaterial()
         {
-            material.shader = Shader.Find(shader);
+            Shader shaderObj = Shader.Find(shader);
+            Material material = new Material(shaderObj);
             material.doubleSidedGI = doubleSidedGI;
             material.enableInstancing = enableInstancing;
             material.renderQueue = renderQueue;
@@ -136,7 +137,8 @@ namespace BundleKit.Assets
                                     break;
                                 case Catalog catalog:
                                     var localId = textureReference.localId;
-                                    texture = catalog.Assets.FirstOrDefault(entry => entry.localId == localId).asset as Texture;
+                                    var assetMap = catalog.Assets.FirstOrDefault(entry => entry.sourceId == localId);
+                                    texture = assetMap.externalAsset as Texture;
                                     break;
                             }
                             if (texture)
@@ -151,8 +153,8 @@ namespace BundleKit.Assets
                     default:
                         throw new InvalidOperationException($"Property: {data.name} has unsupported type: {data.type}");
                 }
-
             }
+            return material;
         }
     }
 }

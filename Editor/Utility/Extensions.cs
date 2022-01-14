@@ -33,6 +33,31 @@ namespace BundleKit.Utility
         }
         public static bool IsNullOrEmpty<T>(this ICollection<T> collection) => collection == null || collection.Count == 0;
 
+
+        public static IEnumerable<AssetTree> CollectAssetTrees(this AssetsFileInstance assetsFileInst, AssetsManager am, Regex[] nameRegex, AssetClassID assetClass, UpdateLog Update)
+        {
+            // Iterate over all requested Class types and collect the data required to copy over the required asset information
+            // This step will recurse over dependencies so all required assets will become available from the resulting bundle
+            Update("Collecting Asset Trees", log: false);
+            var fileInfos = assetsFileInst.table.GetAssetsOfType((int)assetClass);
+            for (var x = 0; x < fileInfos.Count; x++)
+            {
+                var assetFileInfo = fileInfos[x];
+
+                var name = AssetHelper.GetAssetNameFast(assetsFileInst.file, am.classFile, assetFileInfo);
+                // If a name Regex filter is applied, and it does not match, continue
+                int i = 0;
+                for (; i < nameRegex.Length; i++)
+                    if (nameRegex[i] != null && nameRegex[i].IsMatch(name))
+                        break;
+                if (nameRegex.Length != 0 && i == nameRegex.Length) continue;
+
+                var tree = assetsFileInst.GetHierarchy(am, 0, assetFileInfo.index);
+                Update("Collecting Asset Trees", $"({assetClass}) {tree.name}", log: true);
+
+                yield return tree;
+            }
+        }
         public static AssetTree GetHierarchy(this AssetsFileInstance inst, AssetsManager am, int fileId, long pathId)
         {
             var fieldStack = new Stack<(AssetsFileInstance file, AssetTypeValueField field, AssetTree node)>();
@@ -98,30 +123,6 @@ namespace BundleKit.Utility
             }
 
             return first.root;
-        }
-
-        public static IEnumerable<AssetTree> CollectAssetTrees(this AssetsFileInstance assetsFileInst, AssetsManager am, Regex[] nameRegex, AssetClassID assetClass, UpdateLog Update)
-        {
-            // Iterate over all requested Class types and collect the data required to copy over the required asset information
-            // This step will recurse over dependencies so all required assets will become available from the resulting bundle
-            Update("Collecting Asset Trees", log: false);
-            var fileInfos = assetsFileInst.table.GetAssetsOfType((int)assetClass);
-            for (var x = 0; x < fileInfos.Count; x++)
-            {
-                var assetFileInfo = fileInfos[x];
-
-                var name = AssetHelper.GetAssetNameFast(assetsFileInst.file, am.classFile, assetFileInfo);
-                Update("Collecting Asset Trees", $"({assetClass}) {name}", log: true);
-
-                // If a name Regex filter is applied, and it does not match, continue
-                int i = 0;
-                for (; i < nameRegex.Length; i++)
-                    if (nameRegex[i] != null && nameRegex[i].IsMatch(name))
-                        break;
-                if (nameRegex.Length != 0 && i == nameRegex.Length) continue;
-
-                yield return assetsFileInst.GetHierarchy(am, 0, assetFileInfo.index);
-            }
         }
 
         public static void ImportTextureData(this TextureFile texFile, Dictionary<string, Stream> streamReaders, string dataDirectoryPath)
