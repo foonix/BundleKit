@@ -27,22 +27,22 @@ namespace BundleKit.PipelineJobs
             var classDataPath = Path.Combine("Packages", "com.passivepicasso.bundlekit", "Library", "classdata.tpk");
             am.LoadClassPackage(classDataPath);
 
-            var assetsReplacers = new List<AssetsReplacer>();
-            var bundleReplacers = new List<BundleReplacer>();
+            //var assetsReplacers = new List<AssetsReplacer>();
+            //var bundleReplacers = new List<BundleReplacer>();
             var referenceContext = "Removed Assets\r\n";
-            var bundleBaseField = assetBundleExtAsset.instance.GetBaseField();
+            var bundleBaseField = assetBundleExtAsset.baseField;
             var preloadTableArray = bundleBaseField.GetField("m_PreloadTable/Array");
-            preloadTableArray.SetChildrenList(Array.Empty<AssetTypeValueField>());
+            preloadTableArray.Children.Clear();
 
-            var containerChildren = bundleBaseField.GetField("m_Container/Array").GetChildrenList();
+            var containerChildren = bundleBaseField.GetField("m_Container/Array").Children;
             foreach (var child in containerChildren)
             {
-                child.SetValue("second/preloadIndex", 0);
-                child.SetValue("second/preloadSize", 0);
+                child["second"]["preloadIndex"].AsInt = 0;
+                child["second"]["preloadSize"].AsInt = 0;
             }
 
-            var newAssetBundleBytes = bundleBaseField.WriteToByteArray();
-            assetsReplacers.Add(new AssetsReplacerFromMemory(0, assetBundleExtAsset.info.index, (int)assetBundleExtAsset.info.curFileType, 0xFFFF, newAssetBundleBytes));
+            //var newAssetBundleBytes = bundleBaseField.WriteToByteArray();
+            //assetsReplacers.Add(new AssetsReplacerFromMemory(0, assetBundleExtAsset.info.index, (int)assetBundleExtAsset.info.curFileType, 0xFFFF, newAssetBundleBytes));
 
             pipeline.Log(LogLevel.Information, "Removing bundle assets", referenceContext);
 
@@ -50,15 +50,15 @@ namespace BundleKit.PipelineJobs
             using (var bundleStream = new MemoryStream())
             using (var writer = new AssetsFileWriter(bundleStream))
             {
-                bundleAssetsFile.file.Write(writer, 0, assetsReplacers, 0);
+                bundleAssetsFile.file.Write(writer/*, 0, assetsReplacers, 0*/);
                 newAssetData = bundleStream.ToArray();
             }
-            var bundleReplacer = new BundleReplacerFromMemory(bundleAssetsFile.name, bundleAssetsFile.name, true, newAssetData, -1);
-            bundleReplacers.Add(bundleReplacer);
+            //var bundleReplacer = new BundleReplacerFromMemory(bundleAssetsFile.name, bundleAssetsFile.name, true, newAssetData, -1);
+            //bundleReplacers.Add(bundleReplacer);
 
             using (var file = File.OpenWrite(outputAssetBundlePath))
             using (var writer = new AssetsFileWriter(file))
-                bun.file.Write(writer, bundleReplacers);
+                bun.file.Write(writer/*, bundleReplacers*/);
 
             pipeline.Log(LogLevel.Information, "Removed bundle assets", referenceContext);
 

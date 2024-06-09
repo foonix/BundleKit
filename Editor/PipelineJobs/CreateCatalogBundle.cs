@@ -1,5 +1,6 @@
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
+using AssetsTools.NET.Texture;
 using BundleKit.Assets;
 using BundleKit.Utility;
 using System;
@@ -27,7 +28,7 @@ namespace BundleKit.PipelineJobs
         public override Task Execute(Pipeline pipeline)
         {
             var am = new AssetsManager();
-            var assetsReplacers = new List<AssetsReplacer>();
+            //var assetsReplacers = new List<AssetsReplacer>();
 
             using (var progressBar = new ProgressBar("Constructing AssetBundle"))
                 try
@@ -61,23 +62,25 @@ namespace BundleKit.PipelineJobs
 
                     var (bun, bundleAssetsFile, assetBundleExtAsset) = am.LoadBundle(templateBundlePath);
 
-                    var bundleBaseField = assetBundleExtAsset.instance.GetBaseField();
+                    var bundleBaseField = assetBundleExtAsset.baseField;
 
                     var containerArray = bundleBaseField.GetField("m_Container/Array");
                     var dependencyArray = bundleBaseField.GetField("m_Dependencies/Array");
                     var preloadTableArray = bundleBaseField.GetField("m_PreloadTable/Array");
 
                     var bundleName = Path.GetFileNameWithoutExtension(outputAssetBundlePath);
-                    bundleBaseField.Get("m_Name").GetValue().Set(bundleName);
-                    bundleBaseField.Get("m_AssetBundleName").GetValue().Set(bundleName);
+                    bundleBaseField["m_Name"].AsString = bundleName;
+                    bundleBaseField["m_AssetBundleName"].AsString = bundleName;
 
                     var preloadChildren = new List<AssetTypeValueField>();
                     var mContainerChildren = new List<AssetTypeValueField>();
                     var streamReaders = new Dictionary<string, Stream>();
 
-                    bundleAssetsFile.file.dependencies.dependencies.Clear();
-                    bundleAssetsFile.file.dependencies.dependencyCount = 0;
-                    bundleAssetsFile.dependencies.Clear();
+                    // Is this a good idea?
+                    //bundleAssetsFile.file.dependencies.dependencies.Clear();
+                    //bundleAssetsFile.file.dependencies.dependencyCount = 0;
+                    //bundleAssetsFile.dependencies.Clear();
+                    bundleAssetsFile.file.Metadata.Externals.Clear();
 
                     var compiledFilters = filters.Select(f => (assetClass: f.assetClass, nameRegex: f.nameRegex.Select(reg => new Regex(reg)).ToArray())).ToArray();
                     var treeEnumeration = targetFiles
@@ -102,9 +105,9 @@ namespace BundleKit.PipelineJobs
                         var assetTree = group.First();
                         var localId = localIdMap[group.Key];
                         var asset = assetTree.assetExternal;
-                        var baseField = assetTree.assetExternal.instance.GetBaseField();
+                        var baseField = assetTree.assetExternal.baseField;
 
-                        Log(message: $"Remapping ({baseField.GetFieldType()}) {assetTree.name} PPts");
+                        Log(message: $"Remapping ({baseField.TypeName}) {assetTree.name} PPts");
                         var distinctChildren = assetTree.Children.Distinct().ToArray();
 
                         var fileMapElements = distinctChildren
@@ -122,36 +125,36 @@ namespace BundleKit.PipelineJobs
                         foreach (var data in tableData)
                         {
                             var entry = ValueBuilder.DefaultValueFieldFromArrayTemplate(preloadTableArray);
-                            entry.SetValue("m_FileID", 0);
-                            entry.SetValue("m_PathID", localIdMap[data]);
+                            entry["m_FileID"].AsInt = 0;
+                            entry["m_PathID"].AsLong = localIdMap[data];
                             preloadChildren.Add(entry);
                         }
-                        switch (baseField.GetFieldType())
+                        switch (baseField.TypeName)
                         {
                             case "Texture2D":
                             case "Cubemap":
                                 TextureFile texFile = TextureFile.ReadTextureFile(baseField);
-                                texFile.ImportTextureData(streamReaders, dataDirectoryPath);
-                                texFile.WriteTextureFile(baseField);
+                                texFile.WriteTo(baseField);
                                 break;
                         }
 
-                        var assetBytes = asset.instance.WriteToByteArray();
-                        var currentAssetReplacer = new AssetsReplacerFromMemory(0, localId, (int)asset.info.curFileType,
-                                                                                AssetHelper.GetScriptIndex(asset.file.file, asset.info),
-                                                                                assetBytes);
-                        assetsReplacers.Add(currentAssetReplacer);
+                        //var assetBytes = asset.instance.WriteToByteArray();
+
+                        //var currentAssetReplacer = new AssetsReplacerFromMemory(0, localId, (int)asset.info.type,
+                        //                                                        AssetHelper.GetScriptIndex(asset.file.file, asset.info),
+                        //                                                        assetBytes);
+                        //assetsReplacers.Add(currentAssetReplacer);
                         mContainerChildren.Add(containerArray.CreateEntry(assetTree.name, 0, localId, preloadIndex, preloadChildren.Count - preloadIndex));
                     }
 
-                    AddFileMap(am, assetsReplacers, containerArray, preloadTableArray, mContainerChildren, preloadChildren, preloadIndex, fileMaps);
+                    //AddFileMap(am, assetsReplacers, containerArray, preloadTableArray, mContainerChildren, preloadChildren, preloadIndex, fileMaps);
 
-                    preloadTableArray.SetChildrenList(preloadChildren.ToArray());
-                    containerArray.SetChildrenList(mContainerChildren.ToArray());
-                    dependencyArray.SetChildrenList(Array.Empty<AssetTypeValueField>());
+                    preloadTableArray.Children = preloadChildren;
+                    containerArray.Children = mContainerChildren;
+                    dependencyArray.Children = new();
 
                     var newAssetBundleBytes = bundleBaseField.WriteToByteArray();
-                    assetsReplacers.Insert(0, new AssetsReplacerFromMemory(0, assetBundleExtAsset.info.index, (int)assetBundleExtAsset.info.curFileType, 0xFFFF, newAssetBundleBytes));
+                    //assetsReplacers.Insert(0, new AssetsReplacerFromMemory(0, assetBundleExtAsset.info.index, (int)assetBundleExtAsset.info.curFileType, 0xFFFF, newAssetBundleBytes));
 
                     foreach (var stream in streamReaders)
                         stream.Value.Dispose();
@@ -161,34 +164,36 @@ namespace BundleKit.PipelineJobs
                     using (var bundleStream = new MemoryStream())
                     using (var writer = new AssetsFileWriter(bundleStream))
                     {
-                        bundleAssetsFile.file.Write(writer, 0, assetsReplacers, 0, am.classFile);
+                        bundleAssetsFile.file.Write(writer/*, 0, assetsReplacers, 0, am.classFile*/);
                         newAssetData = bundleStream.ToArray();
                     }
 
-                    var bundles = new List<BundleReplacer>
-                        {
-                            new BundleReplacerFromMemory(bundleAssetsFile.name, bundleName, true, newAssetData, -1)
-                        };
+                    //var bundles = new List<BundleReplacer>
+                    //    {
+                    //        new BundleReplacerFromMemory(bundleAssetsFile.name, bundleName, true, newAssetData, -1)
+                    //    };
                     using (var file = File.OpenWrite(outputAssetBundlePath))
                     using (var writer = new AssetsFileWriter(file))
-                        bun.file.Write(writer, bundles);
+                        bun.file.Write(writer /*, bundles*/);
 
                     preloadChildren.Clear();
                     mContainerChildren.Clear();
-                    bundles.Clear();
+                    //bundles.Clear();
                     localIdMap.Clear();
                     fileMaps.Clear();
-                    bundles = null;
+                    //bundles = null;
 
                 }
                 finally
                 {
-                    assetsReplacers.Clear();
+                    //assetsReplacers.Clear();
                     am.UnloadAll(true);
                 }
             return Task.CompletedTask;
         }
 
+        // Obsoleted? AssetsReplacer is gone.
+        /*
         private static void AddFileMap(AssetsManager am, List<AssetsReplacer> assetsReplacers, AssetTypeValueField containerArray, AssetTypeValueField preloadTableArray, List<AssetTypeValueField> mContainerChildren, List<AssetTypeValueField> preloadChildren, int preloadIndex, HashSet<MapRecord> fileMaps)
         {
             const string assetName = "FileMap";
@@ -202,8 +207,8 @@ namespace BundleKit.PipelineJobs
             var fileMap = new FileMap { Maps = fileMaps.ToArray() };
             var mapJson = EditorJsonUtility.ToJson(fileMap, false);
 
-            textAssetBaseField.SetValue("m_Name", assetName);
-            textAssetBaseField.SetValue("m_Script", mapJson);
+            textAssetBaseField["m_Name"].AsString = assetName;
+            textAssetBaseField["m_Script"].AsString = mapJson;
 
             int pathId = assetsReplacers.Count + 2;
             assetsReplacers.Add(new AssetsReplacerFromMemory(0, pathId, cldbType.classId, 0xffff, textAssetBaseField.WriteToByteArray()));
@@ -217,5 +222,6 @@ namespace BundleKit.PipelineJobs
             var pair = containerArray.CreateEntry($"assets/{assetName}.json".ToLowerInvariant(), 0, pathId, preloadIndex, preloadChildren.Count - preloadIndex);
             mContainerChildren.Add(pair);
         }
+        */
     }
 }

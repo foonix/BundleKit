@@ -23,25 +23,27 @@ namespace BundleKit.PipelineJobs
             var fileStream = File.OpenRead(path);
             var bun = am.LoadBundleFile(fileStream, true);
             var bundleAssetsFile = am.LoadAssetsFileFromBundle(bun, 0);
-            var resSFile = bun.file.bundleInf6.dirInf.FirstOrDefault(dir => dir.name.Contains("resS"));
+            //var resSFile = bun.file.bundleInf6.dirInf.FirstOrDefault(dir => dir.name.Contains("resS"));
 
             am.LoadClassPackage("classdata.tpk");
-            var assetsReplacers = new List<AssetsReplacer>();
-            var bundleReplacers = new List<BundleReplacer>();
+            //var assetsReplacers = new List<AssetsReplacer>();
+            //var bundleReplacers = new List<BundleReplacer>();
             var referenceContext = "Removed Assets\r\n";
 
-            foreach (var assetFileInfo in bundleAssetsFile.table.assetFileInfo)// m_Container.children
+            // TODO: Check if this descends into child containers. (Or needs to)
+            foreach (var assetFileInfo in bundleAssetsFile.file.AssetInfos)
             {
-                if (!assetFileInfo.ReadName(bundleAssetsFile.file, out var name)) continue;
-                if ((AssetClassID)assetFileInfo.curFileType == AssetClassID.AssetBundle) continue;
+                // Do we need to skip things without a proper name?
+                var name = AssetHelper.GetAssetNameFast(bundleAssetsFile.file, am.ClassDatabase, assetFileInfo);
+                if ((AssetClassID)assetFileInfo.TypeId != AssetClassID.AssetBundle)
+                {
+                    var type = (AssetClassID)assetFileInfo.TypeId;
+                    long pathId = assetFileInfo.TypeId;
+                    referenceContext += $"1. ({type}) \"{name}\" {{FileID: 0, PathID: {pathId} }}\r\n";
 
-                long pathId = assetFileInfo.index;
-
-                var type = (AssetClassID)assetFileInfo.curFileType;
-                referenceContext += $"1. ({type}) \"{name}\" {{FileID: 0, PathID: {pathId} }}\r\n";
-
-                var remover = new AssetsRemover(0, pathId, (int)type);
-                assetsReplacers.Add(remover);
+                    // This kills the asset.
+                    assetFileInfo.SetRemoved();
+                }
             }
 
             pipeline.Log(LogLevel.Information, "Removing bundle assets", referenceContext);
@@ -50,17 +52,17 @@ namespace BundleKit.PipelineJobs
             using (var bundleStream = new MemoryStream())
             using (var writer = new AssetsFileWriter(bundleStream))
             {
-                bundleAssetsFile.file.Write(writer, 0, assetsReplacers, 0);
+                bundleAssetsFile.file.Write(writer, 0/*, assetsReplacers, 0*/);
                 newAssetData = bundleStream.ToArray();
             }
-            var resSRemover = new BundleRemover(resSFile.name, true);
-            bundleReplacers.Add(resSRemover);
-            var bundleReplacer = new BundleReplacerFromMemory(bundleAssetsFile.name, bundleAssetsFile.name, true, newAssetData, -1);
-            bundleReplacers.Add(bundleReplacer);
+            //var resSRemover = new BundleRemover(resSFile.name, true);
+            //bundleReplacers.Add(resSRemover);
+            //var bundleReplacer = new BundleReplacerFromMemory(bundleAssetsFile.name, bundleAssetsFile.name, true, newAssetData, -1);
+            //bundleReplacers.Add(bundleReplacer);
 
             using (var file = File.OpenWrite(outputAssetBundlePath))
             using (var writer = new AssetsFileWriter(file))
-                bun.file.Write(writer, bundleReplacers);
+                bun.file.Write(writer/*, bundleReplacers*/);
 
             pipeline.Log(LogLevel.Information, "Removed bundle assets", referenceContext);
 

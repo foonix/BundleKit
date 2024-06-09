@@ -1,5 +1,6 @@
 ﻿using AssetsTools.NET;
 using AssetsTools.NET.Extra;
+using AssetsTools.NET.Texture;
 using BundleKit.Assets;
 using System;
 using System.Collections.Generic;
@@ -39,12 +40,12 @@ namespace BundleKit.Utility
             // Iterate over all requested Class types and collect the data required to copy over the required asset information
             // This step will recurse over dependencies so all required assets will become available from the resulting bundle
             Update("Collecting Asset Trees", log: false);
-            var fileInfos = assetsFileInst.table.GetAssetsOfType((int)assetClass);
+            var fileInfos = assetsFileInst.file.GetAssetsOfType((int)assetClass);
             for (var x = 0; x < fileInfos.Count; x++)
             {
                 var assetFileInfo = fileInfos[x];
 
-                var name = AssetHelper.GetAssetNameFast(assetsFileInst.file, am.classFile, assetFileInfo);
+                var name = AssetHelper.GetAssetNameFast(assetsFileInst.file, am.ClassDatabase, assetFileInfo);
                 // If a name Regex filter is applied, and it does not match, continue
                 int i = 0;
                 for (; i < nameRegex.Length; i++)
@@ -52,7 +53,7 @@ namespace BundleKit.Utility
                         break;
                 if (nameRegex.Length != 0 && i == nameRegex.Length) continue;
 
-                var tree = assetsFileInst.GetHierarchy(am, 0, assetFileInfo.index);
+                var tree = assetsFileInst.GetHierarchy(am, 0, assetFileInfo.PathId);
                 Update("Collecting Asset Trees", $"({assetClass}) {tree.name}", log: true);
 
                 yield return tree;
@@ -62,7 +63,7 @@ namespace BundleKit.Utility
         {
             var fieldStack = new Stack<(AssetsFileInstance file, AssetTypeValueField field, AssetTree node)>();
             var baseAsset = am.GetExtAsset(inst, fileId, pathId);
-            var baseField = baseAsset.instance.GetBaseField();
+            var baseField = baseAsset.baseField;
 
             var root = new AssetTree
             {
@@ -79,28 +80,28 @@ namespace BundleKit.Utility
             while (fieldStack.Any())
             {
                 var current = fieldStack.Pop();
-                foreach (var child in current.field.children)
+                foreach (var child in current.field.Children)
                 {
                     //not a value (ie not an int)
-                    if (!child.templateField.hasValue)
+                    if (!child.TemplateField.HasValue)
                     {
                         //not array of values either
-                        if (child.templateField.isArray && child.templateField.children[1].valueType != EnumValueTypes.ValueType_None)
+                        if (child.TemplateField.IsArray && child.TemplateField.Children[1].ValueType != AssetValueType.None)
                             continue;
 
-                        string typeName = child.templateField.type;
+                        string typeName = child.TemplateField.Type;
                         //is a pptr
                         if (typeName.StartsWith("PPtr<") && typeName.EndsWith(">"))
                         {
-                            var pathIdRef = child.Get("m_PathID").GetValue().AsInt64();
+                            var pathIdRef = child["m_PathID"].AsLong;
                             if (pathIdRef == 0)
                                 continue;
 
-                            var fileIdRef = child.Get("m_FileID").GetValue().AsInt();
+                            var fileIdRef = child["m_FileID"].AsInt;
                             var ext = am.GetExtAsset(current.file, fileIdRef, pathIdRef);
 
                             //we don't want to process monobehaviours as thats a project in itself
-                            if (ext.info.curFileType == (int)AssetClassID.MonoBehaviour)
+                            if (ext.info.TypeId == (int)AssetClassID.MonoBehaviour)
                                 continue;
 
                             var node = new AssetTree
@@ -114,7 +115,7 @@ namespace BundleKit.Utility
                             current.node.Children.Add(node);
 
                             //recurse through dependencies
-                            fieldStack.Push((ext.file, ext.instance.GetBaseField(), node));
+                            fieldStack.Push((ext.file, ext.baseField, node));
                         }
                         else
                             fieldStack.Push((current.file, child, current.node));
@@ -157,18 +158,18 @@ namespace BundleKit.Utility
 
         public static string GetName(this AssetExternal asset, AssetsManager am)
         {
-            switch ((AssetClassID)asset.info.curFileType)
+            switch ((AssetClassID)asset.info.TypeId)
             {
                 case AssetClassID.MonoBehaviour:
-                    var nameField = asset.instance.GetBaseField().Get("m_Name");
-                    return nameField.GetValue().AsString();
+                    var nameField = asset.baseField["m_Name"];
+                    return nameField.AsString;
 
                 case AssetClassID.Shader:
-                    var parsedFormField = asset.instance.GetBaseField().Get("m_ParsedForm");
-                    var shaderNameField = parsedFormField.Get("m_Name");
-                    return shaderNameField.GetValue().AsString();
+                    var parsedFormField = asset.baseField["m_ParsedForm"];
+                    var shaderNameField = parsedFormField["m_Name"];
+                    return shaderNameField.AsString;
                 default:
-                    return AssetHelper.GetAssetNameFast(asset.file.file, am.classFile, asset.info);
+                    return AssetHelper.GetAssetNameFast(asset.file.file, am.ClassDatabase, asset.info);
             }
         }
 
