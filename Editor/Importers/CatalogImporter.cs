@@ -33,8 +33,8 @@ namespace BundleKit.Bundles
             var (bun, bundleAssetsFile, assetBundleExtAsset) = am.LoadBundle(ctx.assetPath);
 
             var bundleBaseField = assetBundleExtAsset.baseField;
-            var dependencyArray = bundleBaseField.GetField("m_Dependencies/Array");
-            var container = bundleBaseField.GetField("m_Container/Array");
+            var dependencyArray = bundleBaseField["m_Dependencies.Array"];
+            var container = bundleBaseField["m_Container.Array"];
             var bundleName = bundleBaseField["m_AssetBundleName"].AsString;
 
             am.UnloadAll();

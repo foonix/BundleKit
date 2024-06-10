@@ -31,10 +31,10 @@ namespace BundleKit.PipelineJobs
             //var bundleReplacers = new List<BundleReplacer>();
             var referenceContext = "Removed Assets\r\n";
             var bundleBaseField = assetBundleExtAsset.baseField;
-            var preloadTableArray = bundleBaseField.GetField("m_PreloadTable/Array");
+            var preloadTableArray = bundleBaseField["m_PreloadTable.Array"];
             preloadTableArray.Children.Clear();
 
-            var containerChildren = bundleBaseField.GetField("m_Container/Array").Children;
+            var containerChildren = bundleBaseField["m_Container.Array"].Children;
             foreach (var child in containerChildren)
             {
                 child["second"]["preloadIndex"].AsInt = 0;

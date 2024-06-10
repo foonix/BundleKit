@@ -185,18 +185,6 @@ namespace BundleKit.Utility
             return field;
         }
 
-        // Obsoleted by new accessors?
-        public static AssetTypeValueField GetField(this AssetTypeValueField valueField, string fieldPath) => valueField.Get(fieldPath.Split('/'));
-
-        // Obsoleted by new accessors?
-        /*
-        public static AssetTypeValue GetValue(this AssetTypeValueField valueField, string fieldName)
-            => valueField.Get(fieldName.Split('/')).GetValue(valueField.FieldName);
-
-        public static void SetValue(this AssetTypeValueField valueField, string fieldName, object value)
-            => valueField.GetField(fieldName).GetValue().Set(value);
-        */
-
         public static void RemapPPtrs(this AssetTypeValueField field, IDictionary<(int fileId, long pathId), (int fileId, long pathId)> map)
         {
             var fieldStack = new Stack<AssetTypeValueField>();

@@ -18,11 +18,18 @@ using static BundleKit.Utility.Extensions;
 
 namespace BundleKit.PipelineJobs
 {
+    /// <summary>
+    /// Creates an AssetBundle from assets in an existing Unity build.
+    /// Set the build to read from in the ThunderKit Game Project settings.
+    /// </summary>
     [PipelineSupport(typeof(Pipeline))]
     public class CreateCatalogBundle : PipelineJob
     {
+        [Tooltip("A bundle used to initialize the output bundle.")]
         public DefaultAsset templateBundle;
+        [Tooltip("File to write to. Path is relative to project directory.")]
         public string outputAssetBundlePath;
+        [Tooltip("Object classes to include in bundle")]
         public Filter[] filters;
 
         public override Task Execute(Pipeline pipeline)
@@ -64,9 +71,9 @@ namespace BundleKit.PipelineJobs
 
                     var bundleBaseField = assetBundleExtAsset.baseField;
 
-                    var containerArray = bundleBaseField.GetField("m_Container/Array");
-                    var dependencyArray = bundleBaseField.GetField("m_Dependencies/Array");
-                    var preloadTableArray = bundleBaseField.GetField("m_PreloadTable/Array");
+                    var containerArray = bundleBaseField["m_Container.Array"];
+                    var dependencyArray = bundleBaseField["m_Dependencies.Array"];
+                    var preloadTableArray = bundleBaseField["m_PreloadTable.Array"];
 
                     var bundleName = Path.GetFileNameWithoutExtension(outputAssetBundlePath);
                     bundleBaseField["m_Name"].AsString = bundleName;
@@ -172,8 +179,8 @@ namespace BundleKit.PipelineJobs
                     //    {
                     //        new BundleReplacerFromMemory(bundleAssetsFile.name, bundleName, true, newAssetData, -1)
                     //    };
-                    using (var file = File.OpenWrite(outputAssetBundlePath))
-                    using (var writer = new AssetsFileWriter(file))
+                    using (var fileStream = File.Open(outputAssetBundlePath, FileMode.Create))
+                    using (var writer = new AssetsFileWriter(fileStream))
                         bun.file.Write(writer /*, bundles*/);
 
                     preloadChildren.Clear();
