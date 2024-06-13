@@ -151,9 +151,16 @@ namespace BundleKit.PipelineJobs
                         //                                                        AssetHelper.GetScriptIndex(asset.file.file, asset.info),
                         //                                                        assetBytes);
                         //assetsReplacers.Add(currentAssetReplacer);
-                        assetsReplacers.Add(new ContentReplacerFromBuffer(assetBytes));
+                        var currentAssetReplacer = new ContentReplacerFromBuffer(assetBytes);
+                        assetsReplacers.Add(currentAssetReplacer);
 
                         mContainerChildren.Add(containerArray.CreateEntry(assetTree.name, 0, localId, preloadIndex, preloadChildren.Count - preloadIndex));
+
+                        // append this to the intermediate assets file that will be used to generate the bundle
+                        //var newDirInfo = AssetBundleDirectoryInfo.Create(assetTree.name, true);
+                        //newDirInfo.Replacer = currentAssetReplacer;
+                        //bun.file.BlockAndDirInfo.DirectoryInfos.Add(newDirInfo);
+                        bundleAssetsFile.file.AssetInfos.Add(AssetFileInfo.Create(bundleAssetsFile.file, localId, asset.info.TypeId, am.ClassDatabase));
                     }
 
                     AddFileMap(am, assetsReplacers, containerArray, preloadTableArray, mContainerChildren, preloadChildren, preloadIndex, fileMaps);
@@ -164,7 +171,10 @@ namespace BundleKit.PipelineJobs
 
                     var newAssetBundleBytes = bundleBaseField.WriteToByteArray();
                     //assetsReplacers.Insert(0, new AssetsReplacerFromMemory(0, assetBundleExtAsset.info.index, (int)assetBundleExtAsset.info.curFileType, 0xFFFF, newAssetBundleBytes));
-                    assetsReplacers.Insert(0, new ContentReplacerFromBuffer(newAssetBundleBytes));
+                    var toReplace = assetBundleExtAsset.file.file.GetAssetInfo(assetBundleExtAsset.info.PathId);
+                    var replacer = new ContentReplacerFromBuffer(newAssetBundleBytes);
+                    //assetsReplacers.Insert(0, replacer);
+                    toReplace.Replacer = replacer;
 
                     foreach (var stream in streamReaders)
                         stream.Value.Dispose();
@@ -182,6 +192,11 @@ namespace BundleKit.PipelineJobs
                     //    {
                     //        new BundleReplacerFromMemory(bundleAssetsFile.name, bundleName, true, newAssetData, -1)
                     //    };
+                    var cab = bun.file.BlockAndDirInfo.DirectoryInfos[0];
+                    var cabReplacer = new ContentReplacerFromBuffer(newAssetData);
+                    cab.Name = bundleName;
+                    cab.Replacer = cabReplacer;
+
                     using (var fileStream = File.Open(outputAssetBundlePath, FileMode.Create))
                     using (var writer = new AssetsFileWriter(fileStream))
                         bun.file.Write(writer /*, bundles*/);
@@ -192,7 +207,6 @@ namespace BundleKit.PipelineJobs
                     localIdMap.Clear();
                     fileMaps.Clear();
                     //bundles = null;
-
                 }
                 finally
                 {
