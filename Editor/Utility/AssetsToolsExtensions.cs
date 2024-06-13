@@ -177,14 +177,6 @@ namespace BundleKit.Utility
         }
         */
 
-        public static AssetTypeValueField Get(this AssetTypeValueField valueField, params string[] fieldPath)
-        {
-            var field = valueField;
-            foreach (var pathField in fieldPath)
-                field = field.Get(pathField);
-            return field;
-        }
-
         public static void RemapPPtrs(this AssetTypeValueField field, IDictionary<(int fileId, long pathId), (int fileId, long pathId)> map)
         {
             var fieldStack = new Stack<AssetTypeValueField>();

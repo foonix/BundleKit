@@ -35,7 +35,7 @@ namespace BundleKit.PipelineJobs
         public override Task Execute(Pipeline pipeline)
         {
             var am = new AssetsManager();
-            //var assetsReplacers = new List<AssetsReplacer>();
+            var assetsReplacers = new List<IContentReplacer>();
 
             using (var progressBar = new ProgressBar("Constructing AssetBundle"))
                 try
@@ -83,7 +83,6 @@ namespace BundleKit.PipelineJobs
                     var mContainerChildren = new List<AssetTypeValueField>();
                     var streamReaders = new Dictionary<string, Stream>();
 
-                    // Is this a good idea?
                     //bundleAssetsFile.file.dependencies.dependencies.Clear();
                     //bundleAssetsFile.file.dependencies.dependencyCount = 0;
                     //bundleAssetsFile.dependencies.Clear();
@@ -146,15 +145,18 @@ namespace BundleKit.PipelineJobs
                         }
 
                         //var assetBytes = asset.instance.WriteToByteArray();
+                        var assetBytes = asset.baseField.WriteToByteArray();
 
                         //var currentAssetReplacer = new AssetsReplacerFromMemory(0, localId, (int)asset.info.type,
                         //                                                        AssetHelper.GetScriptIndex(asset.file.file, asset.info),
                         //                                                        assetBytes);
                         //assetsReplacers.Add(currentAssetReplacer);
+                        assetsReplacers.Add(new ContentReplacerFromBuffer(assetBytes));
+
                         mContainerChildren.Add(containerArray.CreateEntry(assetTree.name, 0, localId, preloadIndex, preloadChildren.Count - preloadIndex));
                     }
 
-                    //AddFileMap(am, assetsReplacers, containerArray, preloadTableArray, mContainerChildren, preloadChildren, preloadIndex, fileMaps);
+                    AddFileMap(am, assetsReplacers, containerArray, preloadTableArray, mContainerChildren, preloadChildren, preloadIndex, fileMaps);
 
                     preloadTableArray.Children = preloadChildren;
                     containerArray.Children = mContainerChildren;
@@ -162,6 +164,7 @@ namespace BundleKit.PipelineJobs
 
                     var newAssetBundleBytes = bundleBaseField.WriteToByteArray();
                     //assetsReplacers.Insert(0, new AssetsReplacerFromMemory(0, assetBundleExtAsset.info.index, (int)assetBundleExtAsset.info.curFileType, 0xFFFF, newAssetBundleBytes));
+                    assetsReplacers.Insert(0, new ContentReplacerFromBuffer(newAssetBundleBytes));
 
                     foreach (var stream in streamReaders)
                         stream.Value.Dispose();
@@ -199,15 +202,14 @@ namespace BundleKit.PipelineJobs
             return Task.CompletedTask;
         }
 
-        // Obsoleted? AssetsReplacer is gone.
-        /*
-        private static void AddFileMap(AssetsManager am, List<AssetsReplacer> assetsReplacers, AssetTypeValueField containerArray, AssetTypeValueField preloadTableArray, List<AssetTypeValueField> mContainerChildren, List<AssetTypeValueField> preloadChildren, int preloadIndex, HashSet<MapRecord> fileMaps)
+        private static void AddFileMap(AssetsManager am, List<IContentReplacer> assetsReplacers, AssetTypeValueField containerArray, AssetTypeValueField preloadTableArray, List<AssetTypeValueField> mContainerChildren, List<AssetTypeValueField> preloadChildren, int preloadIndex, HashSet<MapRecord> fileMaps)
         {
             const string assetName = "FileMap";
             var templateField = new AssetTypeTemplateField();
 
-            var cldbType = AssetHelper.FindAssetClassByID(am.classFile, (int)AssetClassID.TextAsset);
-            templateField.FromClassDatabase(am.classFile, cldbType, 0);
+            //var cldbType = AssetHelper.FindAssetClassByID(am.ClassDatabase, (int)AssetClassID.TextAsset);
+            var cldbType = am.ClassDatabase.FindAssetClassByID((int)AssetClassID.TextAsset);
+            templateField.FromClassDatabase(am.ClassDatabase, cldbType);
 
             var textAssetBaseField = ValueBuilder.DefaultValueFieldFromTemplate(templateField);
 
@@ -218,17 +220,17 @@ namespace BundleKit.PipelineJobs
             textAssetBaseField["m_Script"].AsString = mapJson;
 
             int pathId = assetsReplacers.Count + 2;
-            assetsReplacers.Add(new AssetsReplacerFromMemory(0, pathId, cldbType.classId, 0xffff, textAssetBaseField.WriteToByteArray()));
+            //assetsReplacers.Add(new AssetsReplacerFromMemory(0, pathId, cldbType.classId, 0xffff, textAssetBaseField.WriteToByteArray()));
+            assetsReplacers.Add(new ContentReplacerFromBuffer(textAssetBaseField.WriteToByteArray()));
 
             var entry = ValueBuilder.DefaultValueFieldFromArrayTemplate(preloadTableArray);
-            entry.SetValue("m_FileID", 0);
-            entry.SetValue("m_PathID", pathId);
+            entry["m_FileID"].AsInt = 0;
+            entry["m_PathID"].AsInt = pathId;
             preloadChildren.Add(entry);
 
             // Use m_Container to construct an blank element for it
             var pair = containerArray.CreateEntry($"assets/{assetName}.json".ToLowerInvariant(), 0, pathId, preloadIndex, preloadChildren.Count - preloadIndex);
             mContainerChildren.Add(pair);
         }
-        */
     }
 }
