@@ -154,7 +154,15 @@ namespace BundleKit.PipelineJobs
                         bundleAssetsFile.file.AssetInfos.Add(AssetFileInfo.Create(bundleAssetsFile.file, localId, asset.info.TypeId, am.ClassDatabase));
                     }
 
-                    AddFileMap(am, assetsReplacers, containerArray, preloadTableArray, mContainerChildren, preloadChildren, preloadIndex, fileMaps);
+                    var filemapInfo = AddFileMap(am,
+                        bundleAssetsFile,
+                        containerArray,
+                        preloadTableArray,
+                        mContainerChildren,
+                        preloadChildren,
+                        preloadIndex,
+                        fileMaps);
+                    bundleAssetsFile.file.AssetInfos.Add(filemapInfo);
 
                     preloadTableArray.Children = preloadChildren;
                     containerArray.Children = mContainerChildren;
@@ -196,7 +204,15 @@ namespace BundleKit.PipelineJobs
             return Task.CompletedTask;
         }
 
-        private static void AddFileMap(AssetsManager am, List<IContentReplacer> assetsReplacers, AssetTypeValueField containerArray, AssetTypeValueField preloadTableArray, List<AssetTypeValueField> mContainerChildren, List<AssetTypeValueField> preloadChildren, int preloadIndex, HashSet<MapRecord> fileMaps)
+        private static AssetFileInfo AddFileMap(
+            AssetsManager am,
+            AssetsFileInstance bundleInstance,
+            AssetTypeValueField containerArray,
+            AssetTypeValueField preloadTableArray,
+            List<AssetTypeValueField> mContainerChildren,
+            List<AssetTypeValueField> preloadChildren,
+            int preloadIndex,
+            HashSet<MapRecord> fileMaps)
         {
             const string assetName = "FileMap";
             var templateField = new AssetTypeTemplateField();
@@ -212,8 +228,8 @@ namespace BundleKit.PipelineJobs
             textAssetBaseField["m_Name"].AsString = assetName;
             textAssetBaseField["m_Script"].AsString = mapJson;
 
-            int pathId = assetsReplacers.Count + 2;
-            assetsReplacers.Add(new ContentReplacerFromBuffer(textAssetBaseField.WriteToByteArray()));
+            var pathId = bundleInstance.file.AssetInfos.Count;
+            AssetFileInfo assetFileInfo = AssetFileInfo.Create(bundleInstance.file, pathId, (int)AssetClassID.TextAsset, am.ClassDatabase);
 
             var entry = ValueBuilder.DefaultValueFieldFromArrayTemplate(preloadTableArray);
             entry["m_FileID"].AsInt = 0;
@@ -223,6 +239,11 @@ namespace BundleKit.PipelineJobs
             // Use m_Container to construct an blank element for it
             var pair = containerArray.CreateEntry($"assets/{assetName}.json".ToLowerInvariant(), 0, pathId, preloadIndex, preloadChildren.Count - preloadIndex);
             mContainerChildren.Add(pair);
+
+            var replacer = new ContentReplacerFromBuffer(textAssetBaseField.WriteToByteArray());
+            assetFileInfo.Replacer = replacer;
+
+            return assetFileInfo;
         }
     }
 }
