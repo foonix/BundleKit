@@ -3,7 +3,6 @@ using AssetsTools.NET.Extra;
 using AssetsTools.NET.Texture;
 using BundleKit.Assets;
 using BundleKit.Utility;
-using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -62,7 +61,12 @@ namespace BundleKit.PipelineJobs
                     var ggmAssetsPath = Path.Combine(dataDirectoryPath, "globalgamemanagers.assets");
                     var ggmPath = Path.Combine(dataDirectoryPath, "globalgamemanagers");
 
-                    var targetFiles = Enumerable.Empty<string>().Concat(sharedAssetsFiles).Prepend(resourcesFilePath).Prepend(ggmAssetsPath).ToArray();
+                    var targetFiles = new string[]
+                    {
+                        ggmPath,
+                        ggmAssetsPath,
+                        resourcesFilePath,
+                    }.Concat(sharedAssetsFiles);
 
                     am.LoadClassPackage(classDataPath);
                     am.LoadClassDatabaseFromPackage(Application.unityVersion);
@@ -72,7 +76,6 @@ namespace BundleKit.PipelineJobs
                     var bundleBaseField = assetBundleExtAsset.baseField;
 
                     var containerArray = bundleBaseField["m_Container.Array"];
-                    var dependencyArray = bundleBaseField["m_Dependencies.Array"];
                     var preloadTableArray = bundleBaseField["m_PreloadTable.Array"];
 
                     var bundleName = Path.GetFileNameWithoutExtension(outputAssetBundlePath);
@@ -81,14 +84,10 @@ namespace BundleKit.PipelineJobs
 
                     var preloadChildren = new List<AssetTypeValueField>();
                     var mContainerChildren = new List<AssetTypeValueField>();
-                    var streamReaders = new Dictionary<string, Stream>();
 
-                    //bundleAssetsFile.file.dependencies.dependencies.Clear();
-                    //bundleAssetsFile.file.dependencies.dependencyCount = 0;
-                    //bundleAssetsFile.dependencies.Clear();
                     bundleAssetsFile.file.Metadata.Externals.Clear();
 
-                    var compiledFilters = filters.Select(f => (assetClass: f.assetClass, nameRegex: f.nameRegex.Select(reg => new Regex(reg)).ToArray())).ToArray();
+                    var compiledFilters = filters.Select(f => (f.assetClass, nameRegex: f.nameRegex.Select(reg => new Regex(reg)).ToArray())).ToArray();
                     var treeEnumeration = targetFiles
                             .Select(p => am.LoadAssetsFile(p, false))
                             .SelectMany(af => compiledFilters.SelectMany(filter => af.CollectAssetTrees(am, filter.nameRegex, filter.assetClass, Log)));
@@ -98,6 +97,7 @@ namespace BundleKit.PipelineJobs
                     var localIdMap = new Dictionary<AssetTree, long>();
                     var fileMaps = new HashSet<MapRecord>();
                     var preloadIndex = 0;
+
                     Log($"Generating Tree Map");
                     for (long i = 0; i < localGroups.Length; i++)
                     {
@@ -144,22 +144,13 @@ namespace BundleKit.PipelineJobs
                                 break;
                         }
 
-                        //var assetBytes = asset.instance.WriteToByteArray();
                         var assetBytes = asset.baseField.WriteToByteArray();
-
-                        //var currentAssetReplacer = new AssetsReplacerFromMemory(0, localId, (int)asset.info.type,
-                        //                                                        AssetHelper.GetScriptIndex(asset.file.file, asset.info),
-                        //                                                        assetBytes);
-                        //assetsReplacers.Add(currentAssetReplacer);
                         var currentAssetReplacer = new ContentReplacerFromBuffer(assetBytes);
                         assetsReplacers.Add(currentAssetReplacer);
 
                         mContainerChildren.Add(containerArray.CreateEntry(assetTree.name, 0, localId, preloadIndex, preloadChildren.Count - preloadIndex));
 
-                        // append this to the intermediate assets file that will be used to generate the bundle
-                        //var newDirInfo = AssetBundleDirectoryInfo.Create(assetTree.name, true);
-                        //newDirInfo.Replacer = currentAssetReplacer;
-                        //bun.file.BlockAndDirInfo.DirectoryInfos.Add(newDirInfo);
+                        // append this to the intermediate assets file that will be inserted into the bundle
                         bundleAssetsFile.file.AssetInfos.Add(AssetFileInfo.Create(bundleAssetsFile.file, localId, asset.info.TypeId, am.ClassDatabase));
                     }
 
@@ -167,31 +158,23 @@ namespace BundleKit.PipelineJobs
 
                     preloadTableArray.Children = preloadChildren;
                     containerArray.Children = mContainerChildren;
-                    dependencyArray.Children = new();
 
                     var newAssetBundleBytes = bundleBaseField.WriteToByteArray();
-                    //assetsReplacers.Insert(0, new AssetsReplacerFromMemory(0, assetBundleExtAsset.info.index, (int)assetBundleExtAsset.info.curFileType, 0xFFFF, newAssetBundleBytes));
                     var toReplace = assetBundleExtAsset.file.file.GetAssetInfo(assetBundleExtAsset.info.PathId);
                     var replacer = new ContentReplacerFromBuffer(newAssetBundleBytes);
-                    //assetsReplacers.Insert(0, replacer);
                     toReplace.Replacer = replacer;
 
-                    foreach (var stream in streamReaders)
-                        stream.Value.Dispose();
-                    streamReaders.Clear();
-
+                    // The first DirectoryInfo in the bundle is actually an entire assets archive.
+                    // Normally this is called something like CAB-XXXXXXX.
+                    // So we build an entire assets file with the desired content, and then add it to the bundle.
                     byte[] newAssetData;
                     using (var bundleStream = new MemoryStream())
                     using (var writer = new AssetsFileWriter(bundleStream))
                     {
-                        bundleAssetsFile.file.Write(writer/*, 0, assetsReplacers, 0, am.classFile*/);
+                        bundleAssetsFile.file.Write(writer);
                         newAssetData = bundleStream.ToArray();
                     }
 
-                    //var bundles = new List<BundleReplacer>
-                    //    {
-                    //        new BundleReplacerFromMemory(bundleAssetsFile.name, bundleName, true, newAssetData, -1)
-                    //    };
                     var cab = bun.file.BlockAndDirInfo.DirectoryInfos[0];
                     var cabReplacer = new ContentReplacerFromBuffer(newAssetData);
                     cab.Name = bundleName;
@@ -199,18 +182,15 @@ namespace BundleKit.PipelineJobs
 
                     using (var fileStream = File.Open(outputAssetBundlePath, FileMode.Create))
                     using (var writer = new AssetsFileWriter(fileStream))
-                        bun.file.Write(writer /*, bundles*/);
+                        bun.file.Write(writer);
 
                     preloadChildren.Clear();
                     mContainerChildren.Clear();
-                    //bundles.Clear();
                     localIdMap.Clear();
                     fileMaps.Clear();
-                    //bundles = null;
                 }
                 finally
                 {
-                    //assetsReplacers.Clear();
                     am.UnloadAll(true);
                 }
             return Task.CompletedTask;
@@ -221,7 +201,6 @@ namespace BundleKit.PipelineJobs
             const string assetName = "FileMap";
             var templateField = new AssetTypeTemplateField();
 
-            //var cldbType = AssetHelper.FindAssetClassByID(am.ClassDatabase, (int)AssetClassID.TextAsset);
             var cldbType = am.ClassDatabase.FindAssetClassByID((int)AssetClassID.TextAsset);
             templateField.FromClassDatabase(am.ClassDatabase, cldbType);
 
@@ -234,7 +213,6 @@ namespace BundleKit.PipelineJobs
             textAssetBaseField["m_Script"].AsString = mapJson;
 
             int pathId = assetsReplacers.Count + 2;
-            //assetsReplacers.Add(new AssetsReplacerFromMemory(0, pathId, cldbType.classId, 0xffff, textAssetBaseField.WriteToByteArray()));
             assetsReplacers.Add(new ContentReplacerFromBuffer(textAssetBaseField.WriteToByteArray()));
 
             var entry = ValueBuilder.DefaultValueFieldFromArrayTemplate(preloadTableArray);
