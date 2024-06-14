@@ -34,7 +34,6 @@ namespace BundleKit.PipelineJobs
         public override Task Execute(Pipeline pipeline)
         {
             var am = new AssetsManager();
-            var assetsReplacers = new List<IContentReplacer>();
 
             using (var progressBar = new ProgressBar("Constructing AssetBundle"))
                 try
@@ -145,13 +144,13 @@ namespace BundleKit.PipelineJobs
                         }
 
                         var assetBytes = asset.baseField.WriteToByteArray();
-                        var currentAssetReplacer = new ContentReplacerFromBuffer(assetBytes);
-                        assetsReplacers.Add(currentAssetReplacer);
 
                         mContainerChildren.Add(containerArray.CreateEntry(assetTree.name, 0, localId, preloadIndex, preloadChildren.Count - preloadIndex));
 
                         // append this to the intermediate assets file that will be inserted into the bundle
-                        bundleAssetsFile.file.AssetInfos.Add(AssetFileInfo.Create(bundleAssetsFile.file, localId, asset.info.TypeId, am.ClassDatabase));
+                        var currentAssetInfo = AssetFileInfo.Create(bundleAssetsFile.file, localId, asset.info.TypeId, am.ClassDatabase);
+                        currentAssetInfo.Replacer = new ContentReplacerFromBuffer(assetBytes);
+                        bundleAssetsFile.file.AssetInfos.Add(currentAssetInfo);
                     }
 
                     var filemapInfo = AddFileMap(am,
