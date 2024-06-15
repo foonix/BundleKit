@@ -54,18 +54,13 @@ namespace BundleKit.PipelineJobs
                     var dataDirectoryPath = Path.Combine(settings.GamePath, $"{gameName}_Data");
                     var classDataPath = Path.Combine("Packages", "com.passivepicasso.bundlekit", "Library", "classdata.tpk");
 
-                    var sharedAssetsFiles = Directory.EnumerateFiles(dataDirectoryPath, "sharedassets*.assets").ToArray();
-                    var levelFiles = Directory.EnumerateFiles(dataDirectoryPath, "level*").Where(file => Path.GetExtension(file) == string.Empty).ToArray();
-                    var resourcesFilePath = Path.Combine(dataDirectoryPath, "resources.assets");
-                    var ggmAssetsPath = Path.Combine(dataDirectoryPath, "globalgamemanagers.assets");
-                    var ggmPath = Path.Combine(dataDirectoryPath, "globalgamemanagers");
-
                     var targetFiles = new string[]
                     {
-                        ggmPath,
-                        ggmAssetsPath,
-                        resourcesFilePath,
-                    }.Concat(sharedAssetsFiles);
+                        Path.Combine(dataDirectoryPath, "globalgamemanagers"),
+                        Path.Combine(dataDirectoryPath, "globalgamemanagers.assets"),
+                        Path.Combine(dataDirectoryPath, "resources.assets"),
+                    }.Concat(Directory.EnumerateFiles(dataDirectoryPath, "sharedassets*.assets"));
+                    //var levelFiles = Directory.EnumerateFiles(dataDirectoryPath, "level*").Where(file => Path.GetExtension(file) == string.Empty).ToArray();
 
                     am.LoadClassPackage(classDataPath);
                     am.LoadClassDatabaseFromPackage(Application.unityVersion);
@@ -73,7 +68,6 @@ namespace BundleKit.PipelineJobs
                     var (bun, bundleAssetsFile, assetBundleExtAsset) = am.LoadBundle(templateBundlePath);
 
                     var bundleBaseField = assetBundleExtAsset.baseField;
-
                     var containerArray = bundleBaseField["m_Container.Array"];
                     var preloadTableArray = bundleBaseField["m_PreloadTable.Array"];
 
@@ -86,13 +80,16 @@ namespace BundleKit.PipelineJobs
 
                     bundleAssetsFile.file.Metadata.Externals.Clear();
 
-                    var compiledFilters = filters.Select(f => (f.assetClass, nameRegex: f.nameRegex.Select(reg => new Regex(reg)).ToArray())).ToArray();
-                    var treeEnumeration = targetFiles
-                            .Select(p => am.LoadAssetsFile(p, false))
-                            .SelectMany(af => compiledFilters.SelectMany(filter => af.CollectAssetTrees(am, filter.nameRegex, filter.assetClass, Log)));
+                    IGrouping<AssetTree, AssetTree>[] localGroups;
+                    {
+                        var compiledFilters = filters.Select(f => (f.assetClass, nameRegex: f.nameRegex.Select(reg => new Regex(reg)).ToArray())).ToArray();
+                        var treeEnumeration = targetFiles
+                                .Select(p => am.LoadAssetsFile(p, false))
+                                .SelectMany(af => compiledFilters.SelectMany(filter => af.CollectAssetTrees(am, filter.nameRegex, filter.assetClass, Log)));
 
-                    var felledTree = treeEnumeration.SelectMany(tree => tree.Flatten(true));
-                    var localGroups = felledTree.GroupBy(tree => tree).ToArray();
+                        var felledTree = treeEnumeration.SelectMany(tree => tree.Flatten(true));
+                        localGroups = felledTree.GroupBy(tree => tree).ToArray();
+                    }
                     var localIdMap = new Dictionary<AssetTree, long>();
                     var fileMaps = new HashSet<MapRecord>();
                     var preloadIndex = 0;
@@ -166,11 +163,6 @@ namespace BundleKit.PipelineJobs
                     preloadTableArray.Children = preloadChildren;
                     containerArray.Children = mContainerChildren;
 
-                    var newAssetBundleBytes = bundleBaseField.WriteToByteArray();
-                    var toReplace = assetBundleExtAsset.file.file.GetAssetInfo(assetBundleExtAsset.info.PathId);
-                    var replacer = new ContentReplacerFromBuffer(newAssetBundleBytes);
-                    toReplace.Replacer = replacer;
-
                     // The first DirectoryInfo in the bundle is actually an entire assets archive.
                     // Normally this is called something like CAB-XXXXXXX.
                     // So we build an entire assets file with the desired content, and then add it to the bundle.
@@ -178,18 +170,26 @@ namespace BundleKit.PipelineJobs
                     using (var bundleStream = new MemoryStream())
                     using (var writer = new AssetsFileWriter(bundleStream))
                     {
+                        var newAssetBundleBytes = bundleBaseField.WriteToByteArray();
+                        var toReplace = assetBundleExtAsset.file.file.GetAssetInfo(assetBundleExtAsset.info.PathId);
+                        var replacer = new ContentReplacerFromBuffer(newAssetBundleBytes);
+                        toReplace.Replacer = replacer;
+
                         bundleAssetsFile.file.Write(writer);
                         newAssetData = bundleStream.ToArray();
                     }
 
-                    var cab = bun.file.BlockAndDirInfo.DirectoryInfos[0];
-                    var cabReplacer = new ContentReplacerFromBuffer(newAssetData);
-                    cab.Name = bundleName;
-                    cab.Replacer = cabReplacer;
-
+                    // build the actual asset bundle file
                     using (var fileStream = File.Open(outputAssetBundlePath, FileMode.Create))
                     using (var writer = new AssetsFileWriter(fileStream))
+                    {
+                        var cab = bun.file.BlockAndDirInfo.DirectoryInfos[0];
+                        var cabReplacer = new ContentReplacerFromBuffer(newAssetData);
+                        cab.Name = bundleName;
+                        cab.Replacer = cabReplacer;
+
                         bun.file.Write(writer);
+                    }
 
                     preloadChildren.Clear();
                     mContainerChildren.Clear();
