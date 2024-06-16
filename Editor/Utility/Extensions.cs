@@ -54,7 +54,7 @@ namespace BundleKit.Utility
                 if (nameRegex.Length != 0 && i == nameRegex.Length) continue;
 
                 var tree = assetsFileInst.GetHierarchy(am, 0, assetFileInfo.PathId);
-                Update("Collecting Asset Trees", $"({assetClass}) {tree.name}", log: true);
+                Update("Collecting Asset Tree", $"({assetClass}) {tree.name}", log: true);
 
                 yield return tree;
             }
@@ -67,7 +67,7 @@ namespace BundleKit.Utility
 
             var root = new AssetTree
             {
-                name = baseAsset.GetName(am),
+                name = baseAsset.GetName(am).ToLower(),
                 assetExternal = baseAsset,
                 FileId = fileId,
                 PathId = pathId,
@@ -106,7 +106,7 @@ namespace BundleKit.Utility
 
                             var node = new AssetTree
                             {
-                                name = ext.GetName(am),
+                                name = ext.GetName(am).ToLower(),
                                 assetExternal = ext,
                                 FileId = fileIdRef,
                                 PathId = pathIdRef,

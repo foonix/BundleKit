@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor.Build.Pipeline.Utilities;
+using UnityEngine;
 
 namespace BundleKit.Utility
 {
@@ -223,6 +224,49 @@ namespace BundleKit.Utility
             pair["second"]["asset"]["m_FileID"].AsInt = fileId;
             pair["second"]["asset"]["m_PathID"].AsLong = pathId;
             return pair;
+        }
+
+        /// <summary>
+        /// Create an AssetBundleFile from scratch and initialize for the current unity version.
+        ///
+        /// Any assets the bundle shoud contain would be in an AssetsFile structure
+        /// wrapped in a AssetBundleDirectoryInfo (with a ContentReplacer) and added to
+        /// BlockAndDirInfo.DirectoryInfos.
+        /// </summary>
+        /// <returns>A minimally initialized AssetBundleFile</returns>
+        public static AssetBundleFile CreateEmptyAssetBundle()
+        {
+            // Most of this isn't used outside of bundle reading/writing a bundle
+            // So we need to set our write intent here.
+            AssetBundleFile file = new()
+            {
+                Header = new AssetBundleHeader()
+                {
+                    EngineVersion = Application.unityVersion,
+                    Signature = "UnityFS",
+                    GenerationVersion = "5.x.x",
+                    Version = 8, // 6, 7, or 8
+                    FileStreamHeader = new()
+                    {
+                        // Sizes are calculated at write time.
+                        Flags = AssetBundleFSHeaderFlags.HasDirectoryInfo
+                    },
+                },
+                BlockAndDirInfo = new AssetBundleBlockAndDirInfo()
+                {
+                    // needed to put assets into a directory
+                    DirectoryInfos = new(),
+                    BlockInfos = new AssetBundleBlockInfo[]
+                    {
+                        new()
+                        {
+                            Flags = 0x40, // don't stream
+                        },
+                    },
+                },
+            };
+
+            return file;
         }
     }
 }
