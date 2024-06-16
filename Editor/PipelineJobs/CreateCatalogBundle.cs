@@ -161,22 +161,23 @@ namespace BundleKit.PipelineJobs
 
                     // The first DirectoryInfo in the bundle is actually an entire assets archive.
                     // Normally this is called something like CAB-XXXXXXX.
-                    // So we build an entire assets file with the desired content, and then add it to the bundle.
-                    byte[] newAssetData;
-                    using (var bundleStream = new MemoryStream())
-                    using (var writer = new AssetsFileWriter(bundleStream))
+                    // So we build an entire assets file with the desired content, and then add it to the actual bundle file.
+                    using (var tempAssetsFile = new FileStream(Path.GetTempFileName(),
+                            FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None,
+                            4096, FileOptions.RandomAccess | FileOptions.DeleteOnClose))
+                    using (var tempWriter = new AssetsFileWriter(tempAssetsFile))
                     {
-                        bundleAssetsFile.Write(writer);
-                        newAssetData = bundleStream.ToArray();
-                    }
+                        bundleAssetsFile.Write(tempWriter);
+                        // can't release tempWriter here, because the library will close the stream, which deletes the file.
 
-                    // build the actual asset bundle file
-                    using (var fileStream = File.Open(outputAssetBundlePath, FileMode.Create))
-                    using (var writer = new AssetsFileWriter(fileStream))
-                    {
+                        tempAssetsFile.Position = 0;
+
+                        // build the actual asset bundle file
+                        using var fileStream = File.Open(outputAssetBundlePath, FileMode.Create);
+                        using var writer = new AssetsFileWriter(fileStream);
                         var targetBundleFile = AssetsToolsExtensions.CreateEmptyAssetBundle();
                         var dirInfo = AssetBundleDirectoryInfo.Create(bundleName, true);
-                        var dirInfoContent = new ContentReplacerFromBuffer(newAssetData);
+                        var dirInfoContent = new ContentReplacerFromStream(tempAssetsFile);
                         dirInfo.Replacer = dirInfoContent;
                         targetBundleFile.BlockAndDirInfo.DirectoryInfos.Add(dirInfo);
 
