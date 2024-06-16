@@ -268,5 +268,58 @@ namespace BundleKit.Utility
 
             return file;
         }
+
+        /// <summary>
+        /// Create from scratch an AssetsFile suitable for use in an AssetBundle.
+        ///
+        /// The returned cabBaseField is for the first AssetFileInfo (at pathId 1),
+        /// but for now the caller must set up the IReplacer to serialize it manually.
+        /// </summary>
+        /// <param name="cabName">Name of the CAB object. (Type AssetClassID.AssetBundle = 142)</param>
+        /// <param name="cldb">Type database to initialize cabBaseField</param>
+        /// <param name="assetsFile">A (mostly empty) AssetsFile.</param>
+        /// <param name="cabBaseField"></param>
+        public static void CreateBundleAssetsFile(string cabName, ClassDatabaseFile cldb, out AssetsFile assetsFile, out AssetTypeValueField cabBaseField)
+        {
+            assetsFile = new AssetsFile()
+            {
+                Header = new()
+                {
+                    Version = 22, // 2020.x and up
+                },
+                Metadata = new()
+                {
+                    TypeTreeEnabled = true,
+                    UnityVersion = Application.unityVersion,
+                    RefTypes = new(),
+                    TypeTreeTypes = new(),
+                    ScriptTypes = new(),
+                    AssetInfos = new List<AssetFileInfo>(),
+                    Externals = new(),
+                    UserInformation = "BundleKit generated bundle",
+                },
+            };
+
+            // setup empty CAB as first asset. (pathId 1)
+            AssetTypeTemplateField templateField = new()
+            {
+                Children = new(),
+            };
+
+            var cldbType = cldb.FindAssetClassByID((int)AssetClassID.AssetBundle);
+            templateField.FromClassDatabase(cldb, cldbType);
+            cabBaseField = ValueBuilder.DefaultValueFieldFromTemplate(templateField);
+
+            // The Unity editor will cowardly refuse to load the bundle if this is not set.
+            cabBaseField["m_RuntimeCompatibility"].AsUInt = 1;
+            cabBaseField["m_Name"].AsString = cabName;
+            cabBaseField["m_AssetBundleName"].AsString = cabName;
+
+            var cabDataInfo = AssetFileInfo.Create(assetsFile, 1, (int)AssetClassID.AssetBundle, cldb);
+            assetsFile.AssetInfos.Add(cabDataInfo);
+
+            // Probably can set up a replacer here to automatically save changes to cabBaseField,
+            // but a replacer type that can defer serializing it would be needed.
+        }
     }
 }

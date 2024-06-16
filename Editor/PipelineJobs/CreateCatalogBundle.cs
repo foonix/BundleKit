@@ -72,6 +72,8 @@ namespace BundleKit.PipelineJobs
 
                     AssetsFile bundleAssetsFile;
                     AssetExternal assetBundleExtAsset;
+                    AssetTypeValueField bundleBaseField;
+                    AssetFileInfo cabData;
                     if (templateBundle != null)
                     {
                         //Load bundle file and its AssetsFile
@@ -82,40 +84,38 @@ namespace BundleKit.PipelineJobs
                         //Load AssetBundle asset from Bundle AssetsFile so that we can update its data later
                         var assetBundleAsset = bundleAssetsFile.GetAssetsOfType((int)AssetClassID.AssetBundle)[0];
                         assetBundleExtAsset = am.GetExtAsset(bundleAssetsFileInstance, 0, assetBundleAsset.PathId);
-                    }
-                    else
-                    {
-                        throw new NotImplementedException();
-                    }
-                    bundleAssetsFile.Header.Version = 22; // 2020.x and up
-                    bundleAssetsFile.Metadata.UnityVersion = Application.unityVersion;
-                    bundleAssetsFile.Metadata.RefTypes = new();
-                    bundleAssetsFile.Metadata.TypeTreeTypes.Clear();
-                    bundleAssetsFile.AssetInfos.Clear();
+                        bundleAssetsFile.Header.Version = 22; // 2020.x and up
+                        bundleAssetsFile.Metadata.UnityVersion = Application.unityVersion;
+                        bundleAssetsFile.Metadata.RefTypes = new();
+                        bundleAssetsFile.Metadata.TypeTreeTypes.Clear();
+                        bundleAssetsFile.AssetInfos.Clear();
 
-                    // setup empty CAB as first asset. (pathId 1)
-                    var cabData = AssetFileInfo.Create(bundleAssetsFile, 1, (int)AssetClassID.AssetBundle, am.ClassDatabase);
-                    bundleAssetsFile.AssetInfos.Add(cabData);
+                        // setup empty CAB as first asset. (pathId 1)
+                        cabData = AssetFileInfo.Create(bundleAssetsFile, 1, (int)AssetClassID.AssetBundle, am.ClassDatabase);
+                        bundleAssetsFile.AssetInfos.Add(cabData);
 
-                    AssetTypeValueField bundleBaseField;
-                    {
                         AssetTypeTemplateField templateField = new AssetTypeTemplateField();
                         templateField.Children = new();
                         var cldbType = am.ClassDatabase.FindAssetClassByID((int)AssetClassID.AssetBundle);
                         templateField.FromClassDatabase(am.ClassDatabase, cldbType);
                         bundleBaseField = ValueBuilder.DefaultValueFieldFromTemplate(templateField);
                         bundleBaseField["m_RuntimeCompatibility"].AsUInt = 1;
+                        bundleAssetsFile.Metadata.Externals.Clear();
+
+                        bundleBaseField["m_Name"].AsString = bundleName;
+                        bundleBaseField["m_AssetBundleName"].AsString = bundleName;
                     }
+                    else
+                    {
+                        AssetsToolsExtensions.CreateBundleAssetsFile(bundleName, am.ClassDatabase, out bundleAssetsFile, out bundleBaseField);
+                        cabData = bundleAssetsFile.AssetInfos[0];
+                    }
+
                     var containerArray = bundleBaseField["m_Container.Array"];
                     var preloadTableArray = bundleBaseField["m_PreloadTable.Array"];
 
-                    bundleBaseField["m_Name"].AsString = bundleName;
-                    bundleBaseField["m_AssetBundleName"].AsString = bundleName;
-
                     var preloadChildren = new List<AssetTypeValueField>();
                     var mContainerChildren = new List<AssetTypeValueField>();
-
-                    bundleAssetsFile.Metadata.Externals.Clear();
 
                     IGrouping<AssetTree, AssetTree>[] localGroups;
                     {
