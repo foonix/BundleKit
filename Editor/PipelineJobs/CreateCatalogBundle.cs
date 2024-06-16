@@ -3,7 +3,6 @@ using AssetsTools.NET.Extra;
 using AssetsTools.NET.Texture;
 using BundleKit.Assets;
 using BundleKit.Utility;
-using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -25,8 +24,6 @@ namespace BundleKit.PipelineJobs
     [PipelineSupport(typeof(Pipeline))]
     public class CreateCatalogBundle : PipelineJob
     {
-        [Tooltip("A bundle used to initialize the output bundle.")]
-        public DefaultAsset templateBundle;
         [Tooltip("File to write to. Path is relative to project directory.")]
         public string outputAssetBundlePath;
         [Tooltip("Object classes to include in bundle")]
@@ -49,8 +46,6 @@ namespace BundleKit.PipelineJobs
                         progressBar.Update(message, title, progress);
                     }
 
-                    var templateBundlePath = AssetDatabase.GetAssetPath(templateBundle);
-
                     var settings = ThunderKitSetting.GetOrCreateSettings<ThunderKitSettings>();
                     var gameName = Path.GetFileNameWithoutExtension(settings.GameExecutable);
 
@@ -70,46 +65,8 @@ namespace BundleKit.PipelineJobs
 
                     var bundleName = Path.GetFileNameWithoutExtension(outputAssetBundlePath);
 
-                    AssetsFile bundleAssetsFile;
-                    AssetExternal assetBundleExtAsset;
-                    AssetTypeValueField bundleBaseField;
-                    AssetFileInfo cabData;
-                    if (templateBundle != null)
-                    {
-                        //Load bundle file and its AssetsFile
-                        var bun = am.LoadBundleFile(templateBundlePath, true);
-                        var bundleAssetsFileInstance = am.LoadAssetsFileFromBundle(bun, 0);
-                        bundleAssetsFile = am.LoadAssetsFileFromBundle(bun, 0).file;
-
-                        //Load AssetBundle asset from Bundle AssetsFile so that we can update its data later
-                        var assetBundleAsset = bundleAssetsFile.GetAssetsOfType((int)AssetClassID.AssetBundle)[0];
-                        assetBundleExtAsset = am.GetExtAsset(bundleAssetsFileInstance, 0, assetBundleAsset.PathId);
-                        bundleAssetsFile.Header.Version = 22; // 2020.x and up
-                        bundleAssetsFile.Metadata.UnityVersion = Application.unityVersion;
-                        bundleAssetsFile.Metadata.RefTypes = new();
-                        bundleAssetsFile.Metadata.TypeTreeTypes.Clear();
-                        bundleAssetsFile.AssetInfos.Clear();
-
-                        // setup empty CAB as first asset. (pathId 1)
-                        cabData = AssetFileInfo.Create(bundleAssetsFile, 1, (int)AssetClassID.AssetBundle, am.ClassDatabase);
-                        bundleAssetsFile.AssetInfos.Add(cabData);
-
-                        AssetTypeTemplateField templateField = new AssetTypeTemplateField();
-                        templateField.Children = new();
-                        var cldbType = am.ClassDatabase.FindAssetClassByID((int)AssetClassID.AssetBundle);
-                        templateField.FromClassDatabase(am.ClassDatabase, cldbType);
-                        bundleBaseField = ValueBuilder.DefaultValueFieldFromTemplate(templateField);
-                        bundleBaseField["m_RuntimeCompatibility"].AsUInt = 1;
-                        bundleAssetsFile.Metadata.Externals.Clear();
-
-                        bundleBaseField["m_Name"].AsString = bundleName;
-                        bundleBaseField["m_AssetBundleName"].AsString = bundleName;
-                    }
-                    else
-                    {
-                        AssetsToolsExtensions.CreateBundleAssetsFile(bundleName, am.ClassDatabase, out bundleAssetsFile, out bundleBaseField);
-                        cabData = bundleAssetsFile.AssetInfos[0];
-                    }
+                    AssetsToolsExtensions.CreateBundleAssetsFile(bundleName, am.ClassDatabase, out var bundleAssetsFile, out var bundleBaseField);
+                    AssetFileInfo cabData = bundleAssetsFile.AssetInfos[0];
 
                     var containerArray = bundleBaseField["m_Container.Array"];
                     var preloadTableArray = bundleBaseField["m_PreloadTable.Array"];
