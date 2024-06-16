@@ -1,11 +1,8 @@
 ﻿using AssetsTools.NET;
 using AssetsTools.NET.Extra;
-using AssetsTools.NET.Texture;
-using System;
+using BundleKit.Assets.Replacers;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using UnityEditor.Build.Pipeline.Utilities;
 using UnityEngine;
 
 namespace BundleKit.Utility
@@ -271,9 +268,6 @@ namespace BundleKit.Utility
 
         /// <summary>
         /// Create from scratch an AssetsFile suitable for use in an AssetBundle.
-        ///
-        /// The returned cabBaseField is for the first AssetFileInfo (at pathId 1),
-        /// but for now the caller must set up the IReplacer to serialize it manually.
         /// </summary>
         /// <param name="cabName">Name of the CAB object. (Type AssetClassID.AssetBundle = 142)</param>
         /// <param name="cldb">Type database to initialize cabBaseField</param>
@@ -316,10 +310,8 @@ namespace BundleKit.Utility
             cabBaseField["m_AssetBundleName"].AsString = cabName;
 
             var cabDataInfo = AssetFileInfo.Create(assetsFile, 1, (int)AssetClassID.AssetBundle, cldb);
+            cabDataInfo.Replacer = new DeferredBaseFieldSerializer(cabBaseField);
             assetsFile.AssetInfos.Add(cabDataInfo);
-
-            // Probably can set up a replacer here to automatically save changes to cabBaseField,
-            // but a replacer type that can defer serializing it would be needed.
         }
     }
 }

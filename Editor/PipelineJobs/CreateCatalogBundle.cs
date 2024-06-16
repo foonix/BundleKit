@@ -2,6 +2,7 @@ using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 using AssetsTools.NET.Texture;
 using BundleKit.Assets;
+using BundleKit.Assets.Replacers;
 using BundleKit.Utility;
 using System.Collections.Generic;
 using System.IO;
@@ -105,7 +106,8 @@ namespace BundleKit.PipelineJobs
 
                         if (assetTree.Children.Count > 0)
                         {
-                            replacer = CreateRemapedContent(Log, localIdMap, fileMaps, assetTree);
+                            var remapedBaseField = CreateRemapedContent(Log, localIdMap, fileMaps, assetTree);
+                            replacer = new DeferredBaseFieldSerializer(remapedBaseField);
                         }
                         else
                         {
@@ -164,11 +166,6 @@ namespace BundleKit.PipelineJobs
                     using (var bundleStream = new MemoryStream())
                     using (var writer = new AssetsFileWriter(bundleStream))
                     {
-                        // finalize CAB data (AssetClassID.AssetBundle)
-                        var newAssetBundleBytes = bundleBaseField.WriteToByteArray();
-                        var replacer = new ContentReplacerFromBuffer(newAssetBundleBytes);
-                        cabData.Replacer = replacer;
-
                         bundleAssetsFile.Write(writer);
                         newAssetData = bundleStream.ToArray();
                     }
@@ -198,9 +195,8 @@ namespace BundleKit.PipelineJobs
             return Task.CompletedTask;
         }
 
-        IContentReplacer CreateRemapedContent(Log log, Dictionary<AssetTree, long> localIdMap, HashSet<MapRecord> fileMaps, AssetTree assetTree)
+        AssetTypeValueField CreateRemapedContent(Log log, Dictionary<AssetTree, long> localIdMap, HashSet<MapRecord> fileMaps, AssetTree assetTree)
         {
-            IContentReplacer replacer;
             var baseField = assetTree.assetExternal.baseField;
 
             log(message: $"Remapping ({baseField.TypeName}) {assetTree.name} PPts");
@@ -224,8 +220,7 @@ namespace BundleKit.PipelineJobs
                     break;
             }
 
-            replacer = new ContentReplacerFromBuffer(baseField.WriteToByteArray());
-            return replacer;
+            return baseField;
         }
 
         private static AssetFileInfo AddFileMap(
@@ -264,8 +259,7 @@ namespace BundleKit.PipelineJobs
             var pair = containerArray.CreateEntry($"assets/{assetName}.json".ToLowerInvariant(), 0, pathId, preloadIndex, preloadChildren.Count - preloadIndex);
             mContainerChildren.Add(pair);
 
-            var replacer = new ContentReplacerFromBuffer(textAssetBaseField.WriteToByteArray());
-            assetFileInfo.Replacer = replacer;
+            assetFileInfo.Replacer = new DeferredBaseFieldSerializer(textAssetBaseField);
 
             return assetFileInfo;
         }
