@@ -212,7 +212,7 @@ namespace BundleKit.Utility
             }
         }
 
-        public static AssetTypeValueField CreateEntry(this AssetTypeValueField containerArray, string name, int fileId, long pathId, int preloadIndex = 0, int preloadSize = 0)
+        public static void CreateEntry(this AssetTypeValueField containerArray, string name, int fileId, long pathId, int preloadIndex = 0, int preloadSize = 0)
         {
             var pair = ValueBuilder.DefaultValueFieldFromArrayTemplate(containerArray);
             pair["first"].AsString = name;
@@ -220,7 +220,7 @@ namespace BundleKit.Utility
             pair["second"]["preloadSize"].AsInt = preloadSize;
             pair["second"]["asset"]["m_FileID"].AsInt = fileId;
             pair["second"]["asset"]["m_PathID"].AsLong = pathId;
-            return pair;
+            containerArray.Children.Add(pair);
         }
 
         /// <summary>

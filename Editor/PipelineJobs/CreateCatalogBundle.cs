@@ -72,9 +72,6 @@ namespace BundleKit.PipelineJobs
                     var containerArray = bundleBaseField["m_Container.Array"];
                     var preloadTableArray = bundleBaseField["m_PreloadTable.Array"];
 
-                    var preloadChildren = new List<AssetTypeValueField>();
-                    var mContainerChildren = new List<AssetTypeValueField>();
-
                     IGrouping<AssetTree, AssetTree>[] localGroups;
                     {
                         var compiledFilters = filters.Select(f => (f.assetClass, nameRegex: f.nameRegex.Select(reg => new Regex(reg)).ToArray())).ToArray();
@@ -87,7 +84,6 @@ namespace BundleKit.PipelineJobs
                     }
                     var localIdMap = new Dictionary<AssetTree, long>();
                     var fileMaps = new HashSet<MapRecord>();
-                    var preloadIndex = 0;
 
                     Log($"Generating Tree Map");
                     for (long i = 0; i < localGroups.Length; i++)
@@ -101,7 +97,6 @@ namespace BundleKit.PipelineJobs
                     {
                         var assetTree = group.First();
                         var localId = localIdMap[group.Key];
-                        preloadIndex = preloadChildren.Count;
                         IContentReplacer replacer;
 
                         if (assetTree.Children.Count > 0)
@@ -123,16 +118,19 @@ namespace BundleKit.PipelineJobs
                                 );
                         }
 
+                        int preloadStart = preloadTableArray.Children.Count;
                         var tableData = assetTree.Flatten(true).Distinct().ToArray();
+                        // TODO: I don't think we need the asset to list its self in its own perload list.
+                        // Check if we really need the whole tree.
                         foreach (var data in tableData)
                         {
                             var entry = ValueBuilder.DefaultValueFieldFromArrayTemplate(preloadTableArray);
                             entry["m_FileID"].AsInt = 0;
                             entry["m_PathID"].AsLong = localIdMap[data];
-                            preloadChildren.Add(entry);
+                            preloadTableArray.Children.Add(entry);
                         }
 
-                        mContainerChildren.Add(containerArray.CreateEntry(assetTree.name, 0, localId, preloadIndex, preloadChildren.Count - preloadIndex));
+                        containerArray.CreateEntry(assetTree.name, 0, localId, preloadStart, preloadTableArray.Children.Count - preloadStart);
 
                         // Append this to the intermediate assets file that will be inserted into the bundle
                         // Eventually we might want to use the source AssetTreeData here,
@@ -150,14 +148,8 @@ namespace BundleKit.PipelineJobs
                         bundleAssetsFile,
                         containerArray,
                         preloadTableArray,
-                        mContainerChildren,
-                        preloadChildren,
-                        preloadIndex,
                         fileMaps);
                     bundleAssetsFile.AssetInfos.Add(filemapInfo);
-
-                    preloadTableArray.Children = preloadChildren;
-                    containerArray.Children = mContainerChildren;
 
                     // The first DirectoryInfo in the bundle is actually an entire assets archive.
                     // Normally this is called something like CAB-XXXXXXX.
@@ -184,8 +176,6 @@ namespace BundleKit.PipelineJobs
                         targetBundleFile.Write(writer);
                     }
 
-                    preloadChildren.Clear();
-                    mContainerChildren.Clear();
                     localIdMap.Clear();
                     fileMaps.Clear();
                 }
@@ -229,9 +219,6 @@ namespace BundleKit.PipelineJobs
             AssetsFile bundleAssetsFile,
             AssetTypeValueField containerArray,
             AssetTypeValueField preloadTableArray,
-            List<AssetTypeValueField> mContainerChildren,
-            List<AssetTypeValueField> preloadChildren,
-            int preloadIndex,
             HashSet<MapRecord> fileMaps)
         {
             const string assetName = "FileMap";
@@ -254,11 +241,10 @@ namespace BundleKit.PipelineJobs
             var entry = ValueBuilder.DefaultValueFieldFromArrayTemplate(preloadTableArray);
             entry["m_FileID"].AsInt = 0;
             entry["m_PathID"].AsInt = pathId;
-            preloadChildren.Add(entry);
+            preloadTableArray.Children.Add(entry);
 
             // Use m_Container to construct an blank element for it
-            var pair = containerArray.CreateEntry($"assets/{assetName}.json".ToLowerInvariant(), 0, pathId, preloadIndex, preloadChildren.Count - preloadIndex);
-            mContainerChildren.Add(pair);
+            containerArray.CreateEntry($"assets/{assetName}.json".ToLowerInvariant(), 0, pathId);
 
             assetFileInfo.Replacer = new DeferredBaseFieldSerializer(textAssetBaseField);
 
