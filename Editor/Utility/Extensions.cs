@@ -91,10 +91,14 @@ namespace BundleKit.Utility
                         //is a pptr
                         if (child.TryParsePPtr(am, current.file, out var node))
                         {
-                            current.node.Children.Add(node);
+                            if (!root.Children.Contains(node) && root != node)
+                            {
+                                root.Children.Add(node);
 
-                            //recurse through dependencies
-                            fieldStack.Push((node.assetExternal.file, node.assetExternal.baseField, node));
+                                //recurse through dependencies
+                                fieldStack.Push((node.assetExternal.file, node.assetExternal.baseField, node));
+                            }
+                            // Dependencies can be circular, so skip already visited dependencies.
                         }
                         else
                             fieldStack.Push((current.file, child, current.node));
@@ -104,7 +108,7 @@ namespace BundleKit.Utility
                     {
                         foreach (var pPtr in child.Children)
                         {
-                            if (pPtr.TryParsePPtr(am, current.file, out var node))
+                            if (pPtr.TryParsePPtr(am, current.file, out var node) && !root.Children.Contains(node) && root != node)
                             {
                                 current.node.Children.Add(node);
                                 fieldStack.Push((node.assetExternal.file, node.assetExternal.baseField, node));
