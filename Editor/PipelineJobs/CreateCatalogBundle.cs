@@ -123,18 +123,28 @@ namespace BundleKit.PipelineJobs
                         }
 
                         int preloadStart = preloadTableArray.Children.Count;
+                        int preloadSize = 0;
                         var tableData = assetTree.Flatten(true).Distinct().ToArray();
-                        // TODO: I don't think we need the asset to list its self in its own perload list.
-                        // Check if we really need the whole tree.
                         foreach (var data in tableData)
                         {
+                            // skip self
+                            if (data == assetTree)
+                            {
+                                continue;
+                            }
                             var entry = ValueBuilder.DefaultValueFieldFromArrayTemplate(preloadTableArray);
                             entry["m_FileID"].AsInt = 0;
                             entry["m_PathID"].AsLong = localIdMap[data];
                             preloadTableArray.Children.Add(entry);
+                            preloadSize++;
                         }
 
-                        containerArray.CreateEntry(assetTree.name, 0, localId, preloadStart, preloadTableArray.Children.Count - preloadStart);
+                        if (preloadSize == 0)
+                        {
+                            preloadStart = 0;
+                        }
+
+                        containerArray.CreateEntry(assetTree.name, 0, localId, preloadStart, preloadSize);
 
                         // Append this to the intermediate assets file that will be inserted into the bundle
                         // Eventually we might want to use the source AssetTreeData here,
