@@ -2,6 +2,7 @@
 using AssetsTools.NET.Extra;
 using AssetsTools.NET.Texture;
 using BundleKit.Assets;
+using BundleKit.Utility;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -59,6 +60,7 @@ namespace BundleKit.Utility
                 yield return tree;
             }
         }
+
         public static AssetTree GetHierarchy(this AssetsFileInstance inst, AssetsManager am, int fileId, long pathId)
         {
             var fieldStack = new Stack<(AssetsFileInstance file, AssetTypeValueField field, AssetTree node)>();
@@ -85,40 +87,29 @@ namespace BundleKit.Utility
                     //not a value (ie not an int)
                     if (!child.TemplateField.HasValue)
                     {
-                        //not array of values either
-                        if (child.TemplateField.IsArray && child.TemplateField.Children[1].ValueType != AssetValueType.None)
-                            continue;
-
                         string typeName = child.TemplateField.Type;
                         //is a pptr
-                        if (typeName.StartsWith("PPtr<") && typeName.EndsWith(">"))
+                        if (child.TryParsePPtr(am, current.file, out var node))
                         {
-                            var pathIdRef = child["m_PathID"].AsLong;
-                            if (pathIdRef == 0)
-                                continue;
-
-                            var fileIdRef = child["m_FileID"].AsInt;
-                            var ext = am.GetExtAsset(current.file, fileIdRef, pathIdRef);
-
-                            //we don't want to process monobehaviours as thats a project in itself
-                            if (ext.info.TypeId == (int)AssetClassID.MonoBehaviour)
-                                continue;
-
-                            var node = new AssetTree
-                            {
-                                name = ext.GetName(am).ToLower(),
-                                assetExternal = ext,
-                                FileId = fileIdRef,
-                                PathId = pathIdRef,
-                                Children = new List<AssetTree>()
-                            };
                             current.node.Children.Add(node);
 
                             //recurse through dependencies
-                            fieldStack.Push((ext.file, ext.baseField, node));
+                            fieldStack.Push((node.assetExternal.file, node.assetExternal.baseField, node));
                         }
                         else
                             fieldStack.Push((current.file, child, current.node));
+                    }
+                    // is PPtr<T> array, eg m_Dependencies
+                    else if (child.TemplateField.IsArray && child.TemplateField.Children[1].Type.StartsWith("PPtr<"))
+                    {
+                        foreach (var pPtr in child.Children)
+                        {
+                            if (pPtr.TryParsePPtr(am, current.file, out var node))
+                            {
+                                current.node.Children.Add(node);
+                                fieldStack.Push((node.assetExternal.file, node.assetExternal.baseField, node));
+                            }
+                        }
                     }
                 }
             }

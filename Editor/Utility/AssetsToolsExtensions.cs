@@ -1,5 +1,6 @@
 ﻿using AssetsTools.NET;
 using AssetsTools.NET.Extra;
+using BundleKit.Assets;
 using BundleKit.Assets.Replacers;
 using System.Collections.Generic;
 using System.Linq;
@@ -312,6 +313,52 @@ namespace BundleKit.Utility
             var cabDataInfo = AssetFileInfo.Create(assetsFile, 1, (int)AssetClassID.AssetBundle, cldb);
             cabDataInfo.Replacer = new DeferredBaseFieldSerializer(cabBaseField);
             assetsFile.AssetInfos.Add(cabDataInfo);
+        }
+
+        /// <summary>
+        /// Try to parse the provided AssetTypeValueField as a PPtr<T>.
+        /// </summary>
+        /// <param name="pPtr">Record that might be a PPtr</param>
+        /// <param name="am">The AssetsManager.</param>
+        /// <param name="relativeTo">The file containing this record.</param>
+        /// <param name="node">The file pointed to if this is a valid and reachable PPtr.</param>
+        /// <returns>True if the value field is a valid PPtr record that points to a file accessible by am.</returns>
+        public static bool TryParsePPtr(this AssetTypeValueField pPtr, AssetsManager am, AssetsFileInstance relativeTo, out AssetTree node)
+        {
+            var typeName = pPtr.TemplateField.Type;
+            if (!(typeName.StartsWith("PPtr<") && typeName.EndsWith(">")))
+            {
+                node = default;
+                return false;
+            }
+
+            var pathIdRef = pPtr["m_PathID"].AsLong;
+            if (pathIdRef == 0)
+            {
+                node = default;
+                return false;
+            }
+
+            var fileIdRef = pPtr["m_FileID"].AsInt;
+            var ext = am.GetExtAsset(relativeTo, fileIdRef, pathIdRef);
+
+            //we don't want to process monobehaviours as thats a project in itself
+            if (ext.info.TypeId == (int)AssetClassID.MonoBehaviour)
+            {
+                node = default;
+                return false;
+            }
+
+            node = new AssetTree
+            {
+                name = ext.GetName(am).ToLower(),
+                assetExternal = ext,
+                FileId = fileIdRef,
+                PathId = pathIdRef,
+                Children = new List<AssetTree>()
+            };
+
+            return true;
         }
     }
 }

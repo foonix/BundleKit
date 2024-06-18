@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace BundleKit.Assets
 {
-    [DebuggerDisplay("{assetsFileInstance.name}/{name} fid:{FileId} pid:{PathId} children: {Children.Count}")]
+    [DebuggerDisplay("{assetExternal.file.name}/{name} fid:{FileId} pid:{PathId} children: {Children.Count}")]
     public struct AssetTree : IEquatable<AssetTree>
     {
         public string name;

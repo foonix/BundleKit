@@ -76,8 +76,12 @@ namespace BundleKit.PipelineJobs
                     {
                         var compiledFilters = filters.Select(f => (f.assetClass, nameRegex: f.nameRegex.Select(reg => new Regex(reg)).ToArray())).ToArray();
                         var treeEnumeration = sourceFiles
-                                .Select(p => am.LoadAssetsFile(p, false))
-                                .SelectMany(af => compiledFilters.SelectMany(filter => af.CollectAssetTrees(am, filter.nameRegex, filter.assetClass, Log)));
+                                .Select(p => am.LoadAssetsFile(p, true))
+                                .SelectMany(
+                                    af => compiledFilters.SelectMany(
+                                        filter => af.CollectAssetTrees(am, filter.nameRegex, filter.assetClass, Log)
+                                        )
+                                );
 
                         var felledTree = treeEnumeration.SelectMany(tree => tree.Flatten(true));
                         localGroups = felledTree.GroupBy(tree => tree).ToArray();
