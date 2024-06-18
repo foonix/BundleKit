@@ -2,7 +2,6 @@
 using AssetsTools.NET.Extra;
 using AssetsTools.NET.Texture;
 using BundleKit.Assets;
-using BundleKit.Utility;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -54,8 +53,24 @@ namespace BundleKit.Utility
                         break;
                 if (nameRegex.Length != 0 && i == nameRegex.Length) continue;
 
-                var tree = assetsFileInst.GetHierarchy(am, 0, assetFileInfo.PathId);
-                Update("Collecting Asset Tree", $"({assetClass}) {tree.name}", log: true);
+                AssetTree tree;
+                if (assetClass.CanHaveDependencies())
+                {
+                    tree = assetsFileInst.GetHierarchy(am, 0, assetFileInfo.PathId);
+                    Update("Collecting Asset Tree", $"({assetClass}) {tree.name}", log: true);
+                }
+                else
+                {
+                    var baseAsset = am.GetExtAsset(assetsFileInst, 0, assetFileInfo.PathId);
+                    tree = new()
+                    {
+                        name = baseAsset.GetName(am).ToLower(),
+                        assetExternal = baseAsset,
+                        FileId = 0,
+                        PathId = assetFileInfo.PathId,
+                        Children = new List<AssetTree>()
+                    };
+                }
 
                 yield return tree;
             }
@@ -96,7 +111,8 @@ namespace BundleKit.Utility
                                 root.Children.Add(node);
 
                                 //recurse through dependencies
-                                fieldStack.Push((node.assetExternal.file, node.assetExternal.baseField, node));
+                                if (((AssetClassID)node.assetExternal.info.TypeId).CanHaveDependencies())
+                                    fieldStack.Push((node.assetExternal.file, node.assetExternal.baseField, node));
                             }
                             // Dependencies can be circular, so skip already visited dependencies.
                         }
@@ -111,7 +127,8 @@ namespace BundleKit.Utility
                             if (pPtr.TryParsePPtr(am, current.file, out var node) && !root.Children.Contains(node) && root != node)
                             {
                                 current.node.Children.Add(node);
-                                fieldStack.Push((node.assetExternal.file, node.assetExternal.baseField, node));
+                                if (((AssetClassID)node.assetExternal.info.TypeId).CanHaveDependencies())
+                                    fieldStack.Push((node.assetExternal.file, node.assetExternal.baseField, node));
                             }
                         }
                     }
@@ -181,6 +198,15 @@ namespace BundleKit.Utility
                 Types = types;
             }
         }
-    }
 
+        /// <summary>
+        /// Returns false for some types known to be unable to have dependencies.  True otherwise.
+        /// This is mainly to avoid loading and parsing large serialized objects.
+        /// </summary>
+        public static bool CanHaveDependencies(this AssetClassID classId) => classId switch
+        {
+            AssetClassID.Mesh or AssetClassID.Texture2D => false,
+            _ => true,
+        };
+    }
 }

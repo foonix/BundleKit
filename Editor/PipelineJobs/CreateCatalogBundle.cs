@@ -216,14 +216,6 @@ namespace BundleKit.PipelineJobs
 
             var remap = distinctChildren.ToDictionary(child => (child.FileId, child.PathId), child => (0, localIdMap[child]));
             baseField.RemapPPtrs(remap);
-            switch (baseField.TypeName)
-            {
-                case "Texture2D":
-                case "Cubemap":
-                    TextureFile texFile = TextureFile.ReadTextureFile(baseField);
-                    texFile.WriteTo(baseField);
-                    break;
-            }
 
             return baseField;
         }
