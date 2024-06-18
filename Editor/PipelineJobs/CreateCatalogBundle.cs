@@ -244,11 +244,6 @@ namespace BundleKit.PipelineJobs
             var pathId = bundleAssetsFile.AssetInfos.Count + 2;
             AssetFileInfo assetFileInfo = AssetFileInfo.Create(bundleAssetsFile, pathId, (int)AssetClassID.TextAsset, am.ClassDatabase);
 
-            var entry = ValueBuilder.DefaultValueFieldFromArrayTemplate(preloadTableArray);
-            entry["m_FileID"].AsInt = 0;
-            entry["m_PathID"].AsInt = pathId;
-            preloadTableArray.Children.Add(entry);
-
             // Use m_Container to construct an blank element for it
             containerArray.CreateEntry($"assets/{assetName}.json".ToLowerInvariant(), 0, pathId);
 
