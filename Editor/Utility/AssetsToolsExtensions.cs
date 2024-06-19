@@ -196,18 +196,18 @@ namespace BundleKit.Utility
                         //is a pptr
                         if (typeName.StartsWith("PPtr<") && typeName.EndsWith(">"))
                         {
-                            var fileIdField = child["m_FileID"];
-                            var pathIdField = child["m_PathID"];
-                            var pathId = pathIdField.AsLong;
-                            var fileId = fileIdField.AsInt;
-                            if (!map.ContainsKey((fileId, pathId))) continue;
-
-                            var newPPtr = map[(fileId, pathId)];
-                            fileIdField.AsInt = newPPtr.fileId;
-                            pathIdField.AsLong = newPPtr.pathId;
+                            child.TryRemapPPtr(map);
                         }
                         //recurse through dependencies
                         fieldStack.Push(child);
+                    }
+                    // is PPtr<T> array, eg m_Dependencies
+                    else if (child.TemplateField.IsArray && child.TemplateField.Children[1].Type.StartsWith("PPtr<"))
+                    {
+                        foreach (var pPtr in child.Children)
+                        {
+                            pPtr.TryRemapPPtr(map);
+                        }
                     }
                 }
             }
@@ -358,6 +358,20 @@ namespace BundleKit.Utility
                 Children = new List<AssetTree>()
             };
 
+            return true;
+        }
+
+        public static bool TryRemapPPtr(this AssetTypeValueField pPtr, IDictionary<(int fileId, long pathId), (int fileId, long pathId)> map)
+        {
+            var fileIdField = pPtr["m_FileID"];
+            var pathIdField = pPtr["m_PathID"];
+            var pathId = pathIdField.AsLong;
+            var fileId = fileIdField.AsInt;
+            if (!map.ContainsKey((fileId, pathId))) return false;
+
+            var newPPtr = map[(fileId, pathId)];
+            fileIdField.AsInt = newPPtr.fileId;
+            pathIdField.AsLong = newPPtr.pathId;
             return true;
         }
     }
