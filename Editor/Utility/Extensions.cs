@@ -132,6 +132,18 @@ namespace BundleKit.Utility
                             }
                         }
                     }
+                    // or ComponentPair array, eg m_Components in a GameObject
+                    else if (child.TemplateField.IsArray && child.TemplateField.Children[1].Type == "ComponentPair")
+                    {
+                        // Each ComponentPair contains a single PPtr.
+                        foreach (var componentPair in child.Children)
+                        {
+                            if(componentPair[0].TryParsePPtr(am, current.file, out var node))
+                            {
+                                current.node.Children.Add(node);
+                            }
+                        }
+                    }
                 }
             }
 

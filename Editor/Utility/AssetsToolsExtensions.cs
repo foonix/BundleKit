@@ -209,6 +209,13 @@ namespace BundleKit.Utility
                             pPtr.TryRemapPPtr(map);
                         }
                     }
+                    else if (child.TemplateField.IsArray && child.TemplateField.Children[1].Type == "ComponentPair")
+                    {
+                        foreach (var componentPair in child.Children)
+                        {
+                            componentPair[0].TryRemapPPtr(map);
+                        }
+                    }
                 }
             }
         }
