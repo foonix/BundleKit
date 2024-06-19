@@ -120,6 +120,7 @@ namespace BundleKit.PipelineJobs
                                 dataOffset + srcInfo.ByteOffset,
                                 (int)srcInfo.ByteSize
                                 );
+                            fileMaps.Add(new MapRecord(localIdMap[assetTree], (assetTree.assetExternal.file.name, assetTree.PathId)));
                         }
 
                         int preloadStart = preloadTableArray.Children.Count;
@@ -161,7 +162,6 @@ namespace BundleKit.PipelineJobs
                     var filemapInfo = AddFileMap(am,
                         bundleAssetsFile,
                         containerArray,
-                        preloadTableArray,
                         fileMaps);
                     bundleAssetsFile.AssetInfos.Add(filemapInfo);
 
@@ -224,7 +224,6 @@ namespace BundleKit.PipelineJobs
             AssetsManager am,
             AssetsFile bundleAssetsFile,
             AssetTypeValueField containerArray,
-            AssetTypeValueField preloadTableArray,
             HashSet<MapRecord> fileMaps)
         {
             const string assetName = "FileMap";
@@ -236,7 +235,7 @@ namespace BundleKit.PipelineJobs
             var textAssetBaseField = ValueBuilder.DefaultValueFieldFromTemplate(templateField);
 
             var fileMap = new FileMap { Maps = fileMaps.ToArray() };
-            var mapJson = EditorJsonUtility.ToJson(fileMap, false);
+            var mapJson = EditorJsonUtility.ToJson(fileMap, true);
 
             textAssetBaseField["m_Name"].AsString = assetName;
             textAssetBaseField["m_Script"].AsString = mapJson;
