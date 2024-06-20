@@ -106,7 +106,8 @@ namespace BundleKit.PipelineJobs
                         }
                     }
 
-                    Log($"Writing Assets");
+                    Log($"Rewriting Assets");
+                    int remapProgressBar = 0;
                     foreach (var localFile in localFiles)
                     {
                         var localFileId = localIdMap[localFile];
@@ -114,11 +115,13 @@ namespace BundleKit.PipelineJobs
 
                         if (localFile.Children.Count > 0)
                         {
-                            var remapedBaseField = CreateRemapedContent(Log, localIdMap, fileMaps, localFile);
+                            Log(message: $"Remapping {localFile.name} PPts", progress: remapProgressBar / (float)localFiles.Count);
+                            var remapedBaseField = CreateRemapedContent(localIdMap, fileMaps, localFile);
                             replacer = new DeferredBaseFieldSerializer(remapedBaseField);
                         }
                         else
                         {
+                            Log(message: $"Direct copying {localFile.name}", progress: remapProgressBar / (float)localFiles.Count);
                             // If an asset has no outgoing PPtrs and doesn't need to be modified,
                             // lift-and-shift from the source file.
                             var srcFile = localFile.sourceData.file;
@@ -166,6 +169,8 @@ namespace BundleKit.PipelineJobs
                             am.ClassDatabase);
                         newAssetInfo.Replacer = replacer;
                         bundleAssetsFile.AssetInfos.Add(newAssetInfo);
+
+                        remapProgressBar++;
                     }
 
                     var filemapInfo = AddFileMap(am,
@@ -177,7 +182,7 @@ namespace BundleKit.PipelineJobs
                     // The first DirectoryInfo in the bundle is actually an entire assets archive.
                     // Normally this is called something like CAB-XXXXXXX.
                     // So we build an entire assets file with the desired content, and then add it to the actual bundle file.
-                    Log("Writing temporary assets file");
+                    Log("Writing temporary assets file", progress: 0);
                     using (var tempAssetsFile = new FileStream(Path.GetTempFileName(),
                             FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None,
                             4096, FileOptions.RandomAccess | FileOptions.DeleteOnClose))
@@ -211,11 +216,10 @@ namespace BundleKit.PipelineJobs
             return Task.CompletedTask;
         }
 
-        AssetTypeValueField CreateRemapedContent(Log log, Dictionary<AssetTree, long> localIdMap, HashSet<MapRecord> fileMaps, AssetTree assetTree)
+        AssetTypeValueField CreateRemapedContent(Dictionary<AssetTree, long> localIdMap, HashSet<MapRecord> fileMaps, AssetTree assetTree)
         {
             var baseField = assetTree.sourceData.baseField;
 
-            log(message: $"Remapping ({baseField.TypeName}) {assetTree.name} PPts");
             var distinctChildren = assetTree.Children.Distinct().ToArray();
 
             var fileMapElements = distinctChildren
