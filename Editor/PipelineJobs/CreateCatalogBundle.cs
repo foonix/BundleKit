@@ -226,6 +226,8 @@ namespace BundleKit.PipelineJobs
                 fileMaps.Add(map);
 
             var remap = distinctChildren.ToDictionary(child => (child.FileId, child.PathId), child => (0, localIdMap[child]));
+            // Some assets can point to themselves.
+            remap.Add((0, assetTree.PathId), (0, localIdMap[assetTree]));
             baseField.RemapPPtrs(remap);
 
             return baseField;
