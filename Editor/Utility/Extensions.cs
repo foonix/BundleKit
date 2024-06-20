@@ -65,7 +65,7 @@ namespace BundleKit.Utility
                     tree = new()
                     {
                         name = baseAsset.GetName(am).ToLower(),
-                        assetExternal = baseAsset,
+                        sourceData = baseAsset,
                         FileId = 0,
                         PathId = assetFileInfo.PathId,
                         Children = new List<AssetTree>()
@@ -85,7 +85,7 @@ namespace BundleKit.Utility
             var root = new AssetTree
             {
                 name = baseAsset.GetName(am).ToLower(),
-                assetExternal = baseAsset,
+                sourceData = baseAsset,
                 FileId = fileId,
                 PathId = pathId,
                 Children = new List<AssetTree>()
@@ -99,51 +99,44 @@ namespace BundleKit.Utility
                 var current = fieldStack.Pop();
                 foreach (var child in current.field.Children)
                 {
-                    //not a value (ie not an int)
-                    if (!child.TemplateField.HasValue)
+                    //is a pptr
+                    if (!child.TemplateField.IsArray && child.TryParsePPtr(am, current.file, out var pPtrDest))
                     {
-                        string typeName = child.TemplateField.Type;
-                        //is a pptr
-                        if (child.TryParsePPtr(am, current.file, out var node))
+                        if (!root.Children.Contains(pPtrDest) && root != pPtrDest)
                         {
-                            if (!root.Children.Contains(node) && root != node)
-                            {
-                                root.Children.Add(node);
+                            root.Children.Add(pPtrDest);
 
-                                //recurse through dependencies
-                                if (((AssetClassID)node.assetExternal.info.TypeId).CanHaveDependencies())
-                                    fieldStack.Push((node.assetExternal.file, node.assetExternal.baseField, node));
+                            // recurse through dependencies
+                            if (((AssetClassID)pPtrDest.sourceData.info.TypeId).CanHaveDependencies())
+                                fieldStack.Push((pPtrDest.sourceData.file, pPtrDest.sourceData.baseField, pPtrDest));
+                        }
+
+                        // Dependencies can be circular, so skip already visited dependencies.
+                    }
+                    else if (child.TemplateField.IsArray)
+                    {
+                        // is PPtr<T> array, eg m_Dependencies
+                        if (child.TemplateField.Children[1].Type.StartsWith("PPtr<"))
+                        {
+                            foreach (var pPtr in child.Children)
+                            {
+                                if (pPtr.TryParsePPtr(am, current.file, out var pPtrArrayNode)
+                                    && !root.Children.Contains(pPtrArrayNode) && root != pPtrArrayNode)
+                                {
+                                    root.Children.Add(pPtrArrayNode);
+                                    if (((AssetClassID)pPtrArrayNode.sourceData.info.TypeId).CanHaveDependencies())
+                                        fieldStack.Push((pPtrArrayNode.sourceData.file, pPtrArrayNode.sourceData.baseField, pPtrArrayNode));
+                                }
                             }
-                            // Dependencies can be circular, so skip already visited dependencies.
                         }
                         else
+                        {
+                            // The array might be a struct type that contains a PPtr.
                             fieldStack.Push((current.file, child, current.node));
-                    }
-                    // is PPtr<T> array, eg m_Dependencies
-                    else if (child.TemplateField.IsArray && child.TemplateField.Children[1].Type.StartsWith("PPtr<"))
-                    {
-                        foreach (var pPtr in child.Children)
-                        {
-                            if (pPtr.TryParsePPtr(am, current.file, out var node) && !root.Children.Contains(node) && root != node)
-                            {
-                                current.node.Children.Add(node);
-                                if (((AssetClassID)node.assetExternal.info.TypeId).CanHaveDependencies())
-                                    fieldStack.Push((node.assetExternal.file, node.assetExternal.baseField, node));
-                            }
                         }
                     }
-                    // or ComponentPair array, eg m_Components in a GameObject
-                    else if (child.TemplateField.IsArray && child.TemplateField.Children[1].Type == "ComponentPair")
-                    {
-                        // Each ComponentPair contains a single PPtr.
-                        foreach (var componentPair in child.Children)
-                        {
-                            if(componentPair[0].TryParsePPtr(am, current.file, out var node))
-                            {
-                                current.node.Children.Add(node);
-                            }
-                        }
-                    }
+                    else
+                        fieldStack.Push((current.file, child, current.node));
                 }
             }
 

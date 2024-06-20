@@ -72,7 +72,11 @@ namespace BundleKit.PipelineJobs
                     var containerArray = bundleBaseField["m_Container.Array"];
                     var preloadTableArray = bundleBaseField["m_PreloadTable.Array"];
 
-                    IGrouping<AssetTree, AssetTree>[] localGroups;
+                    // STEP 1. Find objects selected by user filters and calculate their dependency lists.
+                    // This reults the full set of objects to go in the asset bundle,
+                    // but dependent objects have to be resolved separately.
+                    Log($"Collecting objects matching filters");
+                    List<AssetTree> localFiles;
                     {
                         var compiledFilters = filters.Select(f => (f.assetClass, nameRegex: f.nameRegex.Select(reg => new Regex(reg)).ToArray())).ToArray();
                         var treeEnumeration = sourceFiles
@@ -83,53 +87,58 @@ namespace BundleKit.PipelineJobs
                                         )
                                 );
 
-                        var felledTree = treeEnumeration.SelectMany(tree => tree.Flatten(true));
-                        localGroups = felledTree.GroupBy(tree => tree).ToArray();
+                        localFiles = treeEnumeration.SelectMany(tree => tree.WithDeps(true)).Distinct().ToList();
                     }
+
+                    // STEP 2. Allocate bundle fileId slots for everything. Harvest any missing dependency graphs
+                    Log(message: $"Generating Tree Map");
                     var localIdMap = new Dictionary<AssetTree, long>();
                     var fileMaps = new HashSet<MapRecord>();
-
-                    Log($"Generating Tree Map");
-                    for (long i = 0; i < localGroups.Length; i++)
+                    for (int i = 0; i < localFiles.Count; i++)
                     {
-                        var assetTree = localGroups[i].First();
+                        var assetTree = localFiles[i];
                         localIdMap[assetTree] = i + 2;
-                        Log(message: $"{assetTree.name} = {i + 2}");
+                        Log("Collecting dependencies", $"Dependencies: {assetTree.name} ({i + 2})", log: true, progress: i / (float)localFiles.Count);
+                        // resolve dependency graph for files only included as dependencies.
+                        if (assetTree.Children is null)
+                        {
+                            localFiles[i] = assetTree.sourceData.file.GetHierarchy(am, 0, assetTree.sourceData.info.PathId);
+                        }
                     }
+
                     Log($"Writing Assets");
-                    foreach (var group in localGroups)
+                    foreach (var localFile in localFiles)
                     {
-                        var assetTree = group.First();
-                        var localId = localIdMap[group.Key];
+                        var localFileId = localIdMap[localFile];
                         IContentReplacer replacer;
 
-                        if (assetTree.Children.Count > 0)
+                        if (localFile.Children.Count > 0)
                         {
-                            var remapedBaseField = CreateRemapedContent(Log, localIdMap, fileMaps, assetTree);
+                            var remapedBaseField = CreateRemapedContent(Log, localIdMap, fileMaps, localFile);
                             replacer = new DeferredBaseFieldSerializer(remapedBaseField);
                         }
                         else
                         {
                             // If an asset has no outgoing PPtrs and doesn't need to be modified,
                             // lift-and-shift from the source file.
-                            var srcFile = assetTree.assetExternal.file;
-                            var srcInfo = assetTree.assetExternal.info;
+                            var srcFile = localFile.sourceData.file;
+                            var srcInfo = localFile.sourceData.info;
                             var dataOffset = srcFile.file.Header.DataOffset;
                             replacer = new ContentReplacerFromStream(
                                 srcFile.AssetsStream,
                                 dataOffset + srcInfo.ByteOffset,
                                 (int)srcInfo.ByteSize
                                 );
-                            fileMaps.Add(new MapRecord(localIdMap[assetTree], (assetTree.assetExternal.file.name, assetTree.PathId)));
+                            fileMaps.Add(new MapRecord(localIdMap[localFile], (localFile.sourceData.file.name, localFile.PathId)));
                         }
 
                         int preloadStart = preloadTableArray.Children.Count;
                         int preloadSize = 0;
-                        var tableData = assetTree.Flatten(true).Distinct().ToArray();
+                        var tableData = localFile.WithDeps(true).Distinct().ToArray();
                         foreach (var data in tableData)
                         {
                             // skip self
-                            if (data == assetTree)
+                            if (data == localFile)
                             {
                                 continue;
                             }
@@ -145,15 +154,15 @@ namespace BundleKit.PipelineJobs
                             preloadStart = 0;
                         }
 
-                        containerArray.CreateEntry(assetTree.name, 0, localId, preloadStart, preloadSize);
+                        containerArray.CreateEntry(localFile.name, 0, localFileId, preloadStart, preloadSize);
 
                         // Append this to the intermediate assets file that will be inserted into the bundle
                         // Eventually we might want to use the source AssetTreeData here,
                         // especially for scripts and such that don't exist in the ClassDatabase.
                         var newAssetInfo = AssetFileInfo.Create(
                             bundleAssetsFile,
-                            localId,
-                            assetTree.assetExternal.info.TypeId,
+                            localFileId,
+                            localFile.sourceData.info.TypeId,
                             am.ClassDatabase);
                         newAssetInfo.Replacer = replacer;
                         bundleAssetsFile.AssetInfos.Add(newAssetInfo);
@@ -168,6 +177,7 @@ namespace BundleKit.PipelineJobs
                     // The first DirectoryInfo in the bundle is actually an entire assets archive.
                     // Normally this is called something like CAB-XXXXXXX.
                     // So we build an entire assets file with the desired content, and then add it to the actual bundle file.
+                    Log("Writing temporary assets file");
                     using (var tempAssetsFile = new FileStream(Path.GetTempFileName(),
                             FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None,
                             4096, FileOptions.RandomAccess | FileOptions.DeleteOnClose))
@@ -179,6 +189,7 @@ namespace BundleKit.PipelineJobs
                         tempAssetsFile.Position = 0;
 
                         // build the actual asset bundle file
+                        Log($"Writing {outputAssetBundlePath}");
                         using var fileStream = File.Open(outputAssetBundlePath, FileMode.Create);
                         using var writer = new AssetsFileWriter(fileStream);
                         var targetBundleFile = AssetsToolsExtensions.CreateEmptyAssetBundle();
@@ -202,14 +213,14 @@ namespace BundleKit.PipelineJobs
 
         AssetTypeValueField CreateRemapedContent(Log log, Dictionary<AssetTree, long> localIdMap, HashSet<MapRecord> fileMaps, AssetTree assetTree)
         {
-            var baseField = assetTree.assetExternal.baseField;
+            var baseField = assetTree.sourceData.baseField;
 
             log(message: $"Remapping ({baseField.TypeName}) {assetTree.name} PPts");
             var distinctChildren = assetTree.Children.Distinct().ToArray();
 
             var fileMapElements = distinctChildren
-                .Select(child => new MapRecord(localIdMap[child], (child.assetExternal.file.name, child.PathId)))
-                .Prepend(new MapRecord(localIdMap[assetTree], (assetTree.assetExternal.file.name, assetTree.PathId)));
+                .Select(child => new MapRecord(localIdMap[child], (child.sourceData.file.name, child.PathId)))
+                .Prepend(new MapRecord(localIdMap[assetTree], (assetTree.sourceData.file.name, assetTree.PathId)));
 
             foreach (var map in fileMapElements)
                 fileMaps.Add(map);

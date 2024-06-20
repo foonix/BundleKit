@@ -185,36 +185,30 @@ namespace BundleKit.Utility
                 var current = fieldStack.Pop();
                 foreach (AssetTypeValueField child in current.Children)
                 {
-                    //not a value (ie not an int)
-                    if (!child.TemplateField.HasValue)
+                    if (!child.TryRemapPPtr(map))
                     {
-                        //not array of values either
-                        if (child.TemplateField.IsArray && child.TemplateField.Children[1].ValueType != AssetValueType.None)
-                            continue;
-
-                        string typeName = child.TemplateField.Type;
-                        //is a pptr
-                        if (typeName.StartsWith("PPtr<") && typeName.EndsWith(">"))
-                        {
-                            child.TryRemapPPtr(map);
-                        }
                         //recurse through dependencies
                         fieldStack.Push(child);
                     }
                     // is PPtr<T> array, eg m_Dependencies
-                    else if (child.TemplateField.IsArray && child.TemplateField.Children[1].Type.StartsWith("PPtr<"))
+                    else if (child.TemplateField.IsArray)
                     {
-                        foreach (var pPtr in child.Children)
+                        if (child.TemplateField.Children[1].Type.StartsWith("PPtr<"))
                         {
-                            pPtr.TryRemapPPtr(map);
+                            foreach (var pPtr in child.Children)
+                            {
+                                pPtr.TryRemapPPtr(map);
+                            }
+                        }
+                        else
+                        {
+                            // may be struct array that contains a PPtr
+                            fieldStack.Push(child);
                         }
                     }
-                    else if (child.TemplateField.IsArray && child.TemplateField.Children[1].Type == "ComponentPair")
+                    else
                     {
-                        foreach (var componentPair in child.Children)
-                        {
-                            componentPair[0].TryRemapPPtr(map);
-                        }
+                        fieldStack.Push(child);
                     }
                 }
             }
@@ -359,10 +353,9 @@ namespace BundleKit.Utility
             node = new AssetTree
             {
                 name = ext.GetName(am).ToLower(),
-                assetExternal = ext,
+                sourceData = ext,
                 FileId = fileIdRef,
                 PathId = pathIdRef,
-                Children = new List<AssetTree>()
             };
 
             return true;
@@ -370,6 +363,9 @@ namespace BundleKit.Utility
 
         public static bool TryRemapPPtr(this AssetTypeValueField pPtr, IDictionary<(int fileId, long pathId), (int fileId, long pathId)> map)
         {
+            string typeName = pPtr.TemplateField.Type;
+            if (!(typeName.StartsWith("PPtr<") && typeName.EndsWith(">"))) return false;
+
             var fileIdField = pPtr["m_FileID"];
             var pathIdField = pPtr["m_PathID"];
             var pathId = pathIdField.AsLong;
