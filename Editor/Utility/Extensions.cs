@@ -35,7 +35,7 @@ namespace BundleKit.Utility
         public static bool IsNullOrEmpty<T>(this ICollection<T> collection) => collection == null || collection.Count == 0;
 
 
-        public static IEnumerable<AssetTree> CollectAssetTrees(this AssetsFileInstance assetsFileInst, AssetsManager am, Regex[] nameRegex, AssetClassID assetClass, UpdateLog Update)
+        public static IEnumerable<AssetTree> CollectAssetTrees(this AssetsFileInstance assetsFileInst, AssetsManager am, Regex[] nameRegex, AssetClassID assetClass, UpdateLog Update, ResourceManagerDb resourceManagerDb)
         {
             // Iterate over all requested Class types and collect the data required to copy over the required asset information
             // This step will recurse over dependencies so all required assets will become available from the resulting bundle
@@ -45,7 +45,11 @@ namespace BundleKit.Utility
             {
                 var assetFileInfo = fileInfos[x];
 
-                var name = AssetHelper.GetAssetNameFast(assetsFileInst.file, am.ClassDatabase, assetFileInfo);
+                string name;
+                if (!resourceManagerDb.TryGetName(assetsFileInst.name, assetFileInfo.PathId, out name))
+                {
+                    name = AssetHelper.GetAssetNameFast(assetsFileInst.file, am.ClassDatabase, assetFileInfo);
+                }
                 // If a name Regex filter is applied, and it does not match, continue
                 int i = 0;
                 for (; i < nameRegex.Length; i++)
@@ -56,15 +60,16 @@ namespace BundleKit.Utility
                 AssetTree tree;
                 if (assetClass.CanHaveDependencies())
                 {
-                    tree = assetsFileInst.GetHierarchy(am, 0, assetFileInfo.PathId);
-                    Update("Collecting Asset Tree", $"({assetClass}) {tree.name}", log: true);
+                    tree = assetsFileInst.GetHierarchy(am, resourceManagerDb, 0, assetFileInfo.PathId);
+                    Update("Collecting Asset Tree", $"({assetClass}) {tree.GetBkCatalogName()}", log: true);
                 }
                 else
                 {
                     var baseAsset = am.GetExtAsset(assetsFileInst, 0, assetFileInfo.PathId);
                     tree = new()
                     {
-                        name = baseAsset.GetName(am).ToLower(),
+                        name = baseAsset.GetName(am),
+                        resourceManagerName = name,
                         sourceData = baseAsset,
                         FileId = 0,
                         PathId = assetFileInfo.PathId,
@@ -76,15 +81,17 @@ namespace BundleKit.Utility
             }
         }
 
-        public static AssetTree GetHierarchy(this AssetsFileInstance inst, AssetsManager am, int fileId, long pathId)
+        public static AssetTree GetHierarchy(this AssetsFileInstance inst, AssetsManager am, ResourceManagerDb resourceManagerDb, int fileId, long pathId)
         {
             var fieldStack = new Stack<(AssetsFileInstance file, AssetTypeValueField field, AssetTree node)>();
             var baseAsset = am.GetExtAsset(inst, fileId, pathId);
             var baseField = baseAsset.baseField;
 
+            resourceManagerDb.TryGetName(inst.name, pathId, out var rmName);
             var root = new AssetTree
             {
-                name = baseAsset.GetName(am).ToLower(),
+                name = baseAsset.GetName(am),
+                resourceManagerName = rmName,
                 sourceData = baseAsset,
                 FileId = fileId,
                 PathId = pathId,

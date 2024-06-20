@@ -63,6 +63,11 @@ namespace BundleKit.PipelineJobs
 
                     am.LoadClassPackage(classDataPath);
                     am.LoadClassDatabaseFromPackage(Application.unityVersion);
+                    foreach (var sourceAssetsFile in sourceFiles)
+                    {
+                        am.LoadAssetsFile(sourceAssetsFile, true);
+                    }
+                    var resourceManagerDb = new ResourceManagerDb(am);
 
                     var bundleName = Path.GetFileNameWithoutExtension(outputAssetBundlePath);
 
@@ -80,10 +85,10 @@ namespace BundleKit.PipelineJobs
                     {
                         var compiledFilters = filters.Select(f => (f.assetClass, nameRegex: f.nameRegex.Select(reg => new Regex(reg)).ToArray())).ToArray();
                         var treeEnumeration = sourceFiles
-                                .Select(p => am.LoadAssetsFile(p, true))
+                                .Select(p => am.LoadAssetsFile(p, false))
                                 .SelectMany(
                                     af => compiledFilters.SelectMany(
-                                        filter => af.CollectAssetTrees(am, filter.nameRegex, filter.assetClass, Log)
+                                        filter => af.CollectAssetTrees(am, filter.nameRegex, filter.assetClass, Log, resourceManagerDb)
                                         )
                                 );
 
@@ -98,11 +103,11 @@ namespace BundleKit.PipelineJobs
                     {
                         var assetTree = localFiles[i];
                         localIdMap[assetTree] = i + 2;
-                        Log("Collecting dependencies", $"Dependencies: {assetTree.name} ({i + 2})", log: true, progress: i / (float)localFiles.Count);
+                        Log("Collecting dependencies", $"Dependencies: {assetTree.GetBkCatalogName()} ({i + 2})", log: true, progress: i / (float)localFiles.Count);
                         // resolve dependency graph for files only included as dependencies.
                         if (assetTree.Children is null)
                         {
-                            localFiles[i] = assetTree.sourceData.file.GetHierarchy(am, 0, assetTree.sourceData.info.PathId);
+                            localFiles[i] = assetTree.sourceData.file.GetHierarchy(am, resourceManagerDb, 0, assetTree.sourceData.info.PathId);
                         }
                     }
 
@@ -115,13 +120,13 @@ namespace BundleKit.PipelineJobs
 
                         if (localFile.Children.Count > 0)
                         {
-                            Log(message: $"Remapping {localFile.name} PPts", progress: remapProgressBar / (float)localFiles.Count);
+                            Log(message: $"Remapping {localFile.GetBkCatalogName()} PPts", progress: remapProgressBar / (float)localFiles.Count);
                             var remapedBaseField = CreateRemapedContent(localIdMap, fileMaps, localFile);
                             replacer = new DeferredBaseFieldSerializer(remapedBaseField);
                         }
                         else
                         {
-                            Log(message: $"Direct copying {localFile.name}", progress: remapProgressBar / (float)localFiles.Count);
+                            Log(message: $"Direct copying {localFile.GetBkCatalogName()}", progress: remapProgressBar / (float)localFiles.Count);
                             // If an asset has no outgoing PPtrs and doesn't need to be modified,
                             // lift-and-shift from the source file.
                             var srcFile = localFile.sourceData.file;
@@ -157,7 +162,9 @@ namespace BundleKit.PipelineJobs
                             preloadStart = 0;
                         }
 
-                        containerArray.CreateEntry(localFile.name, 0, localFileId, preloadStart, preloadSize);
+                        containerArray.CreateEntry(
+                            localFile.GetBkCatalogName(),
+                            0, localFileId, preloadStart, preloadSize);
 
                         // Append this to the intermediate assets file that will be inserted into the bundle
                         // Eventually we might want to use the source AssetTreeData here,

@@ -11,6 +11,7 @@ namespace BundleKit.Assets
     public struct AssetTree : IEquatable<AssetTree>
     {
         public string name;
+        public string resourceManagerName;
         public AssetExternal sourceData;
         public int FileId;
         public long PathId;
@@ -34,6 +35,11 @@ namespace BundleKit.Assets
             if (enterDependencies)
                 foreach (var child in Children)
                     yield return child;
+        }
+
+        public string GetBkCatalogName()
+        {
+            return string.IsNullOrEmpty(resourceManagerName) ? name : resourceManagerName;
         }
 
         public override bool Equals(object obj)
