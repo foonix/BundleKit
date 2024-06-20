@@ -243,7 +243,7 @@ namespace BundleKit.PipelineJobs
             AssetTypeValueField containerArray,
             HashSet<MapRecord> fileMaps)
         {
-            const string assetName = "FileMap";
+            const string assetName = "BundleKitFileMap";
             var templateField = new AssetTypeTemplateField();
 
             var cldbType = am.ClassDatabase.FindAssetClassByID((int)AssetClassID.TextAsset);
@@ -261,7 +261,7 @@ namespace BundleKit.PipelineJobs
             AssetFileInfo assetFileInfo = AssetFileInfo.Create(bundleAssetsFile, pathId, (int)AssetClassID.TextAsset, am.ClassDatabase);
 
             // Use m_Container to construct an blank element for it
-            containerArray.CreateEntry($"assets/{assetName}.json".ToLowerInvariant(), 0, pathId);
+            containerArray.CreateEntry(assetName.ToLowerInvariant(), 0, pathId);
 
             assetFileInfo.Replacer = new DeferredBaseFieldSerializer(textAssetBaseField);
 

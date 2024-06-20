@@ -53,7 +53,7 @@ namespace BundleKit.Bundles
                         break;
                 }
             }
-            var fileMapJson = bundle.LoadAsset<TextAsset>("FileMap");
+            var fileMapJson = bundle.LoadAsset<TextAsset>("BundleKitFileMap");
             var fileMap = JsonUtility.FromJson<FileMap>(fileMapJson.text);
             var lookup = fileMap.Maps.ToDictionary(element => element.LocalId, element => element.OriginId);
 

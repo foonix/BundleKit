@@ -64,7 +64,7 @@ namespace BundleKit.Bundles
             for (int i = 0; i < allAssets.Length; i++)
             {
                 var asset = allAssets[i];
-                if (asset.name == "FileMap") continue;
+                if (asset.name == "BundleKitFileMap") continue;
                 if (asset is Shader shader)
                 {
                     ShaderUtil.RegisterShader(shader);
