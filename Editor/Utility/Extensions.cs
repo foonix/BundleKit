@@ -217,7 +217,7 @@ namespace BundleKit.Utility
         /// </summary>
         public static bool CanHaveDependencies(this AssetClassID classId) => classId switch
         {
-            AssetClassID.Mesh or AssetClassID.Texture2D => false,
+            AssetClassID.Mesh or AssetClassID.Texture2D or AssetClassID.ComputeShader => false,
             _ => true,
         };
     }
