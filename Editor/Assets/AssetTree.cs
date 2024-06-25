@@ -39,7 +39,7 @@ namespace BundleKit.Assets
 
         public string GetBkCatalogName()
         {
-            return string.IsNullOrEmpty(resourceManagerName) ? name : resourceManagerName;
+            return string.IsNullOrEmpty(resourceManagerName) ? name.ToLower() : resourceManagerName;
         }
 
         public override bool Equals(object obj)

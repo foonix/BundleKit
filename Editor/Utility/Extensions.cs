@@ -34,54 +34,9 @@ namespace BundleKit.Utility
         }
         public static bool IsNullOrEmpty<T>(this ICollection<T> collection) => collection == null || collection.Count == 0;
 
-
-        public static IEnumerable<AssetTree> CollectAssetTrees(this AssetsFileInstance assetsFileInst, AssetsManager am, Regex[] nameRegex, AssetClassID assetClass, UpdateLog Update, ResourceManagerDb resourceManagerDb)
-        {
-            // Iterate over all requested Class types and collect the data required to copy over the required asset information
-            // This step will recurse over dependencies so all required assets will become available from the resulting bundle
-            Update("Collecting Asset Trees", log: false);
-            var fileInfos = assetsFileInst.file.GetAssetsOfType((int)assetClass);
-            for (var x = 0; x < fileInfos.Count; x++)
-            {
-                var assetFileInfo = fileInfos[x];
-
-                string name;
-                if (!resourceManagerDb.TryGetName(assetsFileInst.name, assetFileInfo.PathId, out name))
-                {
-                    name = AssetHelper.GetAssetNameFast(assetsFileInst.file, am.ClassDatabase, assetFileInfo);
-                }
-                // If a name Regex filter is applied, and it does not match, continue
-                int i = 0;
-                for (; i < nameRegex.Length; i++)
-                    if (nameRegex[i] != null && nameRegex[i].IsMatch(name))
-                        break;
-                if (nameRegex.Length != 0 && i == nameRegex.Length) continue;
-
-                AssetTree tree;
-                if (assetClass.CanHaveDependencies())
-                {
-                    tree = assetsFileInst.GetHierarchy(am, resourceManagerDb, 0, assetFileInfo.PathId);
-                    Update("Collecting Asset Tree", $"({assetClass}) {tree.GetBkCatalogName()}", log: true);
-                }
-                else
-                {
-                    var baseAsset = am.GetExtAsset(assetsFileInst, 0, assetFileInfo.PathId);
-                    tree = new()
-                    {
-                        name = baseAsset.GetName(am),
-                        resourceManagerName = name,
-                        sourceData = baseAsset,
-                        FileId = 0,
-                        PathId = assetFileInfo.PathId,
-                        Children = new List<AssetTree>()
-                    };
-                }
-
-                yield return tree;
-            }
-        }
-
-        public static AssetTree GetHierarchy(this AssetsFileInstance inst, AssetsManager am, ResourceManagerDb resourceManagerDb, int fileId, long pathId)
+        public static AssetTree GetDependencies(
+            this AssetsFileInstance inst, AssetsManager am, ResourceManagerDb resourceManagerDb,
+            int fileId, long pathId, bool recurseFiles)
         {
             var fieldStack = new Stack<(AssetsFileInstance file, AssetTypeValueField field, AssetTree node)>();
             var baseAsset = am.GetExtAsset(inst, fileId, pathId);
@@ -114,7 +69,7 @@ namespace BundleKit.Utility
                             root.Children.Add(pPtrDest);
 
                             // recurse through dependencies
-                            if (((AssetClassID)pPtrDest.sourceData.info.TypeId).CanHaveDependencies())
+                            if (((AssetClassID)pPtrDest.sourceData.info.TypeId).CanHaveDependencies() && recurseFiles)
                                 fieldStack.Push((pPtrDest.sourceData.file, pPtrDest.sourceData.baseField, pPtrDest));
                         }
 
@@ -131,7 +86,7 @@ namespace BundleKit.Utility
                                     && !root.Children.Contains(pPtrArrayNode) && root != pPtrArrayNode)
                                 {
                                     root.Children.Add(pPtrArrayNode);
-                                    if (((AssetClassID)pPtrArrayNode.sourceData.info.TypeId).CanHaveDependencies())
+                                    if (((AssetClassID)pPtrArrayNode.sourceData.info.TypeId).CanHaveDependencies() && recurseFiles)
                                         fieldStack.Push((pPtrArrayNode.sourceData.file, pPtrArrayNode.sourceData.baseField, pPtrArrayNode));
                                 }
                             }
@@ -220,5 +175,44 @@ namespace BundleKit.Utility
             AssetClassID.Mesh or AssetClassID.Texture2D or AssetClassID.ComputeShader => false,
             _ => true,
         };
+
+        /// <summary>
+        /// Check if any filter's assetClass assetFileInfo's TypeId.
+        ///
+        /// This is a pre-check to avoid a more expensive name fetch.
+        /// </summary>
+        public static bool MatchesAnyClass(this Filter[] filters, AssetFileInfo assetFileInfo)
+        {
+            foreach (var filter in filters)
+            {
+                if ((AssetClassID)assetFileInfo.TypeId == filter.assetClass)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Test if the combination of AssetClassID and asset name matches any filter.
+        /// </summary>
+        public static bool AnyMatch(this Filter[] filters, AssetFileInfo assetFileInfo, string name)
+        {
+            if (name is null)
+            {
+                return false;
+            }
+
+            foreach (var filter in filters)
+            {
+                if (filter.Match(assetFileInfo, name))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
     }
 }

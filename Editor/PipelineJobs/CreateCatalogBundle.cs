@@ -1,13 +1,11 @@
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
-using AssetsTools.NET.Texture;
 using BundleKit.Assets;
 using BundleKit.Assets.Replacers;
 using BundleKit.Utility;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using ThunderKit.Common.Logging;
 using ThunderKit.Core.Data;
@@ -77,42 +75,58 @@ namespace BundleKit.PipelineJobs
                     var containerArray = bundleBaseField["m_Container.Array"];
                     var preloadTableArray = bundleBaseField["m_PreloadTable.Array"];
 
-                    // STEP 1. Find objects selected by user filters and calculate their dependency lists.
-                    // This reults the full set of objects to go in the asset bundle,
-                    // but dependent objects have to be resolved separately.
+                    // Find objects selected by user filters
+                    // These are our main objects to be show in the catalog browser.
                     Log($"Collecting objects matching filters");
-                    List<AssetTree> localFiles;
+                    foreach (var sourceFile in sourceFiles)
                     {
-                        var compiledFilters = filters.Select(f => (f.assetClass, nameRegex: f.nameRegex.Select(reg => new Regex(reg)).ToArray())).ToArray();
-                        var treeEnumeration = sourceFiles
-                                .Select(p => am.LoadAssetsFile(p, false))
-                                .SelectMany(
-                                    af => compiledFilters.SelectMany(
-                                        filter => af.CollectAssetTrees(am, filter.nameRegex, filter.assetClass, Log, resourceManagerDb)
-                                        )
-                                );
+                        am.LoadAssetsFile(sourceFile, true);
+                    }
+                    List<AssetTree> localFiles = CollectRootAssets(am, filters, Log, resourceManagerDb).ToList();
 
-                        localFiles = treeEnumeration.SelectMany(tree => tree.WithDeps(true)).Distinct().ToList();
+                    // Resolve full dependency graphs for root objects and allocate fileId slots.
+                    var localIdMap = new Dictionary<AssetTree, long>();
+                    int rootObjCount = localFiles.Count;
+                    for (int i = 0; i < rootObjCount; i++)
+                    {
+                        var root = localFiles[i];
+                        int localId = i + 2;
+                        localIdMap[root] = localId;
+                        Log("Collecting dependencies", $"Root object: {root.GetBkCatalogName()} ({localId})", log: true, progress: i / (float)localFiles.Count);
+                        // resolve dependency graph
+                        if (root.Children is null)
+                        {
+                            localFiles[i] = root.sourceData.file.GetDependencies(
+                                am, resourceManagerDb, 0,
+                                root.sourceData.info.PathId, true);
+                        }
                     }
 
-                    // STEP 2. Allocate bundle fileId slots for everything. Harvest any missing dependency graphs
-                    Log(message: $"Generating Tree Map");
-                    var localIdMap = new Dictionary<AssetTree, long>();
-                    var fileMaps = new HashSet<MapRecord>();
-                    for (int i = 0; i < localFiles.Count; i++)
+                    // Allocate fileId slots for objects only included as required dependencies.
+                    // These don't need names, and their dep graphs are a subset of root objects' dep graphs.
+                    var depObjects = localFiles.SelectMany(a => a.Children)
+                        .Where(c => !localFiles.Contains(c))  // a root object can depend on another root object.
+                        .Distinct().ToList();
+                    for (int i = 0; i < depObjects.Count; i++)
                     {
-                        var assetTree = localFiles[i];
-                        localIdMap[assetTree] = i + 2;
-                        Log("Collecting dependencies", $"Dependencies: {assetTree.GetBkCatalogName()} ({i + 2})", log: true, progress: i / (float)localFiles.Count);
-                        // resolve dependency graph for files only included as dependencies.
-                        if (assetTree.Children is null)
+                        var depObj = depObjects[i];
+                        int localId = rootObjCount + i + 2;
+                        localIdMap[depObj] = localId;
+                        Log("Collecting dependencies", $"dep object: {depObj.GetBkCatalogName()} ({localId})", log: true, progress: i / (float)depObjects.Count);
+                        if (depObj.Children is null)
                         {
-                            localFiles[i] = assetTree.sourceData.file.GetHierarchy(am, resourceManagerDb, 0, assetTree.sourceData.info.PathId);
+                            // The full dep graph will already be available,
+                            // but we do need to know the immediate deps for remapping the PPtrs.
+                            depObj = depObj.sourceData.file.GetDependencies(
+                                am, resourceManagerDb, 0,
+                                depObj.sourceData.info.PathId, false);
                         }
+                        localFiles.Add(depObj);
                     }
 
                     Log($"Rewriting Assets");
                     int remapProgressBar = 0;
+                    var fileMaps = new HashSet<MapRecord>();
                     foreach (var localFile in localFiles)
                     {
                         var localFileId = localIdMap[localFile];
@@ -273,6 +287,58 @@ namespace BundleKit.PipelineJobs
             assetFileInfo.Replacer = new DeferredBaseFieldSerializer(textAssetBaseField);
 
             return assetFileInfo;
+        }
+
+        private static IEnumerable<AssetTree> CollectRootAssets(
+            AssetsManager am,
+            Filter[] filters,
+            UpdateLog Update,
+            ResourceManagerDb resourceManagerDb)
+        {
+            foreach (var assetsFileInst in am.Files)
+            {
+                Update(message: assetsFileInst.name, log: false);
+
+                foreach (AssetFileInfo assetFileInfo in assetsFileInst.file.AssetInfos)
+                {
+                    if (!filters.MatchesAnyClass(assetFileInfo))
+                    {
+                        continue;
+                    }
+
+                    var external = am.GetExtAsset(assetsFileInst, 0, assetFileInfo.PathId);
+                    resourceManagerDb.TryGetName(assetsFileInst.name, assetFileInfo.PathId, out var rmName);
+                    string name = external.GetName(am);
+
+
+                    if (!(filters.AnyMatch(assetFileInfo, rmName) || filters.AnyMatch(assetFileInfo, name)))
+                    {
+                        continue;
+                    }
+
+                    // we know we want the asset as a root asset at this point
+
+                    bool canHaveDeps = ((AssetClassID)assetFileInfo.TypeId).CanHaveDependencies();
+
+                    // dispose the baseAsset if we're not going to need it for anything other than the name.
+                    if (!canHaveDeps)
+                    {
+                        external.baseField = null;
+                    }
+
+                    yield return new AssetTree()
+                    {
+                        name = name,
+                        resourceManagerName = rmName,
+                        sourceData = external,
+                        FileId = 0,
+                        PathId = assetFileInfo.PathId,
+                        Children = canHaveDeps
+                            ? null    // deps are unknown at this point
+                            : new(),  // we know there are no deps
+                    };
+                }
+            }
         }
     }
 }
