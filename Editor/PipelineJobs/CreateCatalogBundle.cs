@@ -86,6 +86,7 @@ namespace BundleKit.PipelineJobs
 
                     // Resolve full dependency graphs for root objects and allocate fileId slots.
                     var localIdMap = new Dictionary<AssetTree, long>();
+                    var fileMaps = new HashSet<MapRecord>();
                     int rootObjCount = localFiles.Count;
                     for (int i = 0; i < rootObjCount; i++)
                     {
@@ -100,6 +101,7 @@ namespace BundleKit.PipelineJobs
                                 am, resourceManagerDb, 0,
                                 root.sourceData.info.PathId, true);
                         }
+                        fileMaps.Add(new MapRecord(localId, (root.sourceData.file.name, root.PathId)));
                     }
 
                     // Allocate fileId slots for objects only included as required dependencies.
@@ -124,9 +126,32 @@ namespace BundleKit.PipelineJobs
                         localFiles.Add(depObj);
                     }
 
+                    // create CAB entry for root objects only now that we know where deps are going to go.
+                    for (int i = 0; i < rootObjCount; i++)
+                    {
+                        var root = localFiles[i];
+                        int localId = i + 2;
+                        int preloadStart = preloadTableArray.Children.Count;
+                        int preloadSize = 0;
+                        var tableData = root.Children.Distinct().ToArray();
+                        foreach (var data in tableData)
+                        {
+                            var entry = ValueBuilder.DefaultValueFieldFromArrayTemplate(preloadTableArray);
+                            entry["m_FileID"].AsInt = 0;
+                            entry["m_PathID"].AsLong = localIdMap[data];
+                            preloadTableArray.Children.Add(entry);
+                            preloadSize++;
+                        }
+
+                        if (preloadSize == 0)
+                        {
+                            preloadStart = 0;
+                        }
+                        containerArray.CreateEntry(root.GetBkCatalogName(), 0, localId, preloadStart, preloadSize);
+                    }
+
                     Log($"Rewriting Assets");
                     int remapProgressBar = 0;
-                    var fileMaps = new HashSet<MapRecord>();
                     foreach (var localFile in localFiles)
                     {
                         var localFileId = localIdMap[localFile];
@@ -135,7 +160,7 @@ namespace BundleKit.PipelineJobs
                         if (localFile.Children.Count > 0)
                         {
                             Log(message: $"Remapping {localFile.GetBkCatalogName()} PPts", progress: remapProgressBar / (float)localFiles.Count);
-                            var remapedBaseField = CreateRemapedContent(localIdMap, fileMaps, localFile);
+                            var remapedBaseField = CreateRemapedContent(localIdMap, localFile);
                             replacer = new DeferredBaseFieldSerializer(remapedBaseField);
                         }
                         else
@@ -149,36 +174,8 @@ namespace BundleKit.PipelineJobs
                             replacer = new ContentReplacerFromStream(
                                 srcFile.AssetsStream,
                                 dataOffset + srcInfo.ByteOffset,
-                                (int)srcInfo.ByteSize
-                                );
-                            fileMaps.Add(new MapRecord(localIdMap[localFile], (localFile.sourceData.file.name, localFile.PathId)));
+                                (int)srcInfo.ByteSize);
                         }
-
-                        int preloadStart = preloadTableArray.Children.Count;
-                        int preloadSize = 0;
-                        var tableData = localFile.WithDeps(true).Distinct().ToArray();
-                        foreach (var data in tableData)
-                        {
-                            // skip self
-                            if (data == localFile)
-                            {
-                                continue;
-                            }
-                            var entry = ValueBuilder.DefaultValueFieldFromArrayTemplate(preloadTableArray);
-                            entry["m_FileID"].AsInt = 0;
-                            entry["m_PathID"].AsLong = localIdMap[data];
-                            preloadTableArray.Children.Add(entry);
-                            preloadSize++;
-                        }
-
-                        if (preloadSize == 0)
-                        {
-                            preloadStart = 0;
-                        }
-
-                        containerArray.CreateEntry(
-                            localFile.GetBkCatalogName(),
-                            0, localFileId, preloadStart, preloadSize);
 
                         // Append this to the intermediate assets file that will be inserted into the bundle
                         // Eventually we might want to use the source AssetTreeData here,
@@ -237,7 +234,7 @@ namespace BundleKit.PipelineJobs
             return Task.CompletedTask;
         }
 
-        AssetTypeValueField CreateRemapedContent(Dictionary<AssetTree, long> localIdMap, HashSet<MapRecord> fileMaps, AssetTree assetTree)
+        AssetTypeValueField CreateRemapedContent(Dictionary<AssetTree, long> localIdMap, AssetTree assetTree)
         {
             var baseField = assetTree.sourceData.baseField;
 
@@ -246,9 +243,6 @@ namespace BundleKit.PipelineJobs
             var fileMapElements = distinctChildren
                 .Select(child => new MapRecord(localIdMap[child], (child.sourceData.file.name, child.PathId)))
                 .Prepend(new MapRecord(localIdMap[assetTree], (assetTree.sourceData.file.name, assetTree.PathId)));
-
-            foreach (var map in fileMapElements)
-                fileMaps.Add(map);
 
             var remap = distinctChildren.ToDictionary(child => (child.FileId, child.PathId), child => (0, localIdMap[child]));
             // Some assets can point to themselves.
