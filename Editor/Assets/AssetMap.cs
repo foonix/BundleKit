@@ -51,5 +51,9 @@ namespace BundleKit.Assets
             return !(left == right);
         }
 
+        public override string ToString()
+        {
+            return $"AssetMap: {sourceFile} {sourceId}";
+        }
     }
 }
