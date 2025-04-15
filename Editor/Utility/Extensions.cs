@@ -6,6 +6,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.RegularExpressions;
 using UnityEditor.Build.Content;
 
@@ -220,5 +222,28 @@ namespace BundleKit.Utility
             AssetClassID.Mesh or AssetClassID.Texture2D => false,
             _ => true,
         };
+
+        public static T Read<T>(this ReadOnlySpan<byte> span, ref int cursor) where T : struct
+        {
+            var size = Marshal.SizeOf(typeof(T));
+            var ret = MemoryMarshal.Read<T>(span.Slice(cursor, size));
+            cursor += size;
+            return ret;
+        }
+
+
+        public static StringBuilder ReadPaddedString(this ReadOnlySpan<byte> span, ref int cursor)
+        {
+            int strLen = span.Read<int>(ref cursor);
+            StringBuilder sb = new(strLen);
+
+            for (int i = 0; i < strLen; i++)
+            {
+                sb.Append((char)span[i + cursor]);
+            }
+            var padding = (4 - (strLen % 4)) % 4;
+            cursor += strLen + padding;
+            return sb;
+        }
     }
 }
