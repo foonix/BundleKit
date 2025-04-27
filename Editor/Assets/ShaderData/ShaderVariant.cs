@@ -9,8 +9,8 @@ namespace BundleKit.Assets.ShaderData
 {
     public class ShaderVariant
     {
-        readonly HashSet<string> keywords = new();
-        readonly byte[] shaderObj;
+        public readonly HashSet<string> keywords = new();
+        public readonly byte[] shaderObj;
 
         public ShaderVariant(HashSet<string> keywords, byte[] shaderObj)
         {
