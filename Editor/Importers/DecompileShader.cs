@@ -8,6 +8,8 @@ using System.Linq;
 using ThunderKit.Core.Data;
 using UnityEditor;
 using UnityEngine;
+using System;
+using System.Runtime.InteropServices;
 
 public class DecompileShader
 {
@@ -76,14 +78,16 @@ public class DecompileShader
                     Debug.Assert(passData.TypeName == "SerializedPass");
                     Debug.Log("Translating " + name);
 
-                    ExtractProgram(passData["progVertex"], blob);
-                    ExtractProgram(passData["progFragment"], blob);
+
+                    string normalized = name.Replace(Path.AltDirectorySeparatorChar, '_');
+                    ExtractProgram(passData["progVertex"], blob, "shader_output/" + normalized + "_vertex_");
+                    ExtractProgram(passData["progFragment"], blob, "shader_output/" + normalized + "_frag_");
                 }
             }
         }
     }
 
-    private static void ExtractProgram(AssetTypeValueField field, ShaderBlob blob)
+    private static void ExtractProgram(AssetTypeValueField field, ShaderBlob blob, string name)
     {
         Debug.Assert(field.TypeName == "SerializedProgram");
         // contains:
@@ -96,16 +100,31 @@ public class DecompileShader
         // m_PlayerSubPrograms is an array of arrays.  The outer array seems to be length 1. (purpose unknown)
         // inner arrays is an array of association between keywords and the blob index.  May be empty (due to variant stripping?)
         var subPrograms = field["m_PlayerSubPrograms"].Children[0].SelectMany(c => c.Children[0].Children);
+
+        int index = 0;
         foreach (var subProgram in subPrograms)
         {
             Debug.Assert(subProgram.TypeName == "SerializedPlayerSubProgram");
-            // "unsigned int m_BlobIndex"
-            // "vector m_KeywordIndices"
-            // "SInt64 m_ShaderRequirements"
-            // "SInt8 m_GpuProgramType"
             uint blobIndex = subProgram["m_BlobIndex"].AsUInt;
             var variant = blob.ExtractVariantAtIndex((int)blobIndex);
-            HLSLcc.TranslateHLSL(variant.shaderObj);
+
+            var input = variant.shaderObj;
+            var resultPtr = D2G.decompile_to_hlsl(input, (UIntPtr)input.Length);
+
+            if (resultPtr == IntPtr.Zero)
+            {
+                Debug.LogError("Failed to compile shader" + name);
+                File.Create(name + index + ".dxbc").Dispose();
+                File.WriteAllBytes(name + index + ".dxbc", input);
+                continue;
+            }
+            
+            var result = Marshal.PtrToStringAnsi(resultPtr);
+
+            var outputPath = name + index + ".hlsl";
+            File.Create(outputPath).Dispose();
+            File.WriteAllText(outputPath, result);
+            index++;
         }
     }
 }
